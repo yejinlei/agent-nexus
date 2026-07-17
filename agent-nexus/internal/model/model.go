@@ -1,6 +1,6 @@
 package model
 
-import "go-agent-config/internal/proxy"
+import "agent-nexus/internal/proxy"
 
 // ModelMapping represents a model routing entry
 type ModelMapping struct {
@@ -42,4 +42,5 @@ func FindBestModel(agentName, proxyBaseModel string, table []ModelMapping) (stri
 	}
 	return "", ""
 }
+
 

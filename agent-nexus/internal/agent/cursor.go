@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/proxy"
 )
 
 type cursorWriter struct{}
@@ -38,3 +38,4 @@ func (w *cursorWriter) Status(path string) (bool, string) {
 	s := string(data)
 	return strings.Contains(s, "cursor.ai.chat.apiBase") && strings.Contains(s, "127.0.0.1"), "OpenAI-compatible via CCX"
 }
+

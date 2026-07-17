@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/proxy"
 )
 
 type claudeWriter struct{}
@@ -44,3 +44,4 @@ func (w *claudeWriter) Status(path string) (bool, string) {
 	s := string(data)
 	return strings.Contains(s, "127.0.0.1") && strings.Contains(s, "3688"), "via CCX proxy"
 }
+

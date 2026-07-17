@@ -1,8 +1,9 @@
 # Compiled binary
-go-agent-config.exe
+agent-nexus.exe
 
 # Go build artifacts
 vendor/
 *.test
 *.out
+
 

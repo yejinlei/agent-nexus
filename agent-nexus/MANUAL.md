@@ -1,4 +1,4 @@
-# go-agent-config 用户使用手册
+# agent-nexus 用户使用手册
 
 ## 核心概念
 
@@ -19,7 +19,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### 用法 1：一键完整配置
 
 ```powershell
-.\go-agent-config.exe configure
+.\agent-nexus.exe configure
 ```
 
 完整流程：检测代理 → 扫描 agent → 备份 → 配置所有可配置的 agent → 显示路由表。
@@ -27,7 +27,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### 用法 2：手动指定代理
 
 ```powershell
-.\go-agent-config.exe configure --url http://127.0.0.1:8080/v1 --key sk-your-key
+.\agent-nexus.exe configure --url http://127.0.0.1:8080/v1 --key sk-your-key
 ```
 
 直接传入 URL 和 Key，跳过自动嗅探。
@@ -35,8 +35,8 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### 用法 3：查看当前状态
 
 ```powershell
-.\go-agent-config.exe status
-.\go-agent-config.exe route
+.\agent-nexus.exe status
+.\agent-nexus.exe route
 ```
 
 ## 完整命令参考
@@ -44,8 +44,8 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### configure — 备份后一键自动配置
 
 ```powershell
-.\go-agent-config.exe configure
-.\go-agent-config.exe configure --url http://proxy:9000/v1 --key sk-xxx
+.\agent-nexus.exe configure
+.\agent-nexus.exe configure --url http://proxy:9000/v1 --key sk-xxx
 ```
 
 流程：
@@ -58,7 +58,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### backup — 备份所有 agent 配置
 
 ```powershell
-.\go-agent-config.exe backup
+.\agent-nexus.exe backup
 ```
 
 将所有 agent 配置文件复制到 `~/.codex/backups/agent-configs-YYYY-MM-DD_HH-MM-SS/`。
@@ -66,7 +66,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### status — 显示各 agent 状态
 
 ```powershell
-.\go-agent-config.exe status
+.\agent-nexus.exe status
 ```
 
 输出每个 agent 的安装状态和配置状态（🔗 已配置 / ⚙️ 未配置 / ❌ 未安装）。
@@ -74,7 +74,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### route — 显示模型路由表
 
 ```powershell
-.\go-agent-config.exe route
+.\agent-nexus.exe route
 ```
 
 显示三层模型路由：各 agent 的写入模型 → 实际后端模型，以及 CCX 自动映射表。
@@ -82,7 +82,7 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### discover — 扫描已安装的 agent
 
 ```powershell
-.\go-agent-config.exe discover
+.\agent-nexus.exe discover
 ```
 
 列出所有已扫描到的 AI agent 及其配置文件路径。
@@ -90,8 +90,8 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 ### detect — 检测代理配置
 
 ```powershell
-.\go-agent-config.exe detect
-.\go-agent-config.exe detect --url http://proxy:9000/v1 --key sk-xxx
+.\agent-nexus.exe detect
+.\agent-nexus.exe detect --url http://proxy:9000/v1 --key sk-xxx
 ```
 
 读取 CCX Desktop 配置并输出代理地址、Key 和模型映射表。
@@ -135,23 +135,23 @@ copy .\agent-configs-2026-07-17_14-30-00\config.toml ~/.codex\config.toml
 
 ### 场景 1：首次使用
 ```powershell
-.\go-agent-config.exe configure
+.\agent-nexus.exe configure
 ```
 
 ### 场景 2：更换代理地址
 ```powershell
-.\go-agent-config.exe configure --url http://127.0.0.1:9000/v1 --key new-key
+.\agent-nexus.exe configure --url http://127.0.0.1:9000/v1 --key new-key
 ```
 
 ### 场景 3：只查看状态（不修改）
 ```powershell
-.\go-agent-config.exe status
-.\go-agent-config.exe route
+.\agent-nexus.exe status
+.\agent-nexus.exe route
 ```
 
 ### 场景 4：只备份（不配置）
 ```powershell
-.\go-agent-config.exe backup
+.\agent-nexus.exe backup
 ```
 
 ## 彩色输出含义
@@ -183,3 +183,4 @@ Cursor 的字段名取决于版本。如果自动配置无效，请通过 Cursor
 - API Key 仅写入各 agent 自身的配置文件，不会扩散到其他地方
 - 配置文件均为本地文件，不上传网络
 - 备份目录仅本地存储，不对外暴露
+

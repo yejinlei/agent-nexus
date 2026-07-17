@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/proxy"
 )
 
 type openClawWriter struct{}
@@ -52,3 +52,4 @@ func (w *openClawWriter) Status(path string) (bool, string) {
 	s := string(data)
 	return strings.Contains(s, "sensenova-ccx"), "sensenova-ccx provider configured"
 }
+

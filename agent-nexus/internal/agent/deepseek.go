@@ -3,7 +3,7 @@ package agent
 import (
 	"os"
 	"strings"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/proxy"
 )
 
 type deepSeekWriter struct{}
@@ -24,3 +24,4 @@ func (w *deepSeekWriter) Status(path string) (bool, string) {
 	s := string(data)
 	return strings.Contains(s, "127.0.0.1") && strings.Contains(s, "3688"), "via CCX proxy"
 }
+

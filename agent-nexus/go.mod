@@ -1,4 +1,4 @@
-module go-agent-config
+module agent-nexus
 
 go 1.23
 
@@ -7,3 +7,4 @@ require (
 	github.com/spf13/cobra v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 )
+

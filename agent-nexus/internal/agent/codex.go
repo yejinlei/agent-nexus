@@ -3,7 +3,7 @@ package agent
 import (
 	"os"
 	"strings"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/proxy"
 )
 
 type codexWriter struct{}
@@ -54,3 +54,4 @@ func applyPattern(content, pattern, replacement string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+

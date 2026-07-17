@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go-agent-config/internal/agent"
-	"go-agent-config/internal/backup"
-	"go-agent-config/internal/discover"
-	"go-agent-config/internal/model"
-	"go-agent-config/internal/proxy"
+	"agent-nexus/internal/agent"
+	"agent-nexus/internal/backup"
+	"agent-nexus/internal/discover"
+	"agent-nexus/internal/model"
+	"agent-nexus/internal/proxy"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "go-agent-config",
+	Use:   "agent-nexus",
 	Short: "Go AI Agent Configuration Tool - 自动化配置各种 AI coding agent",
-	Long: `go-agent-config - 一键自动化配置各种 AI coding agent
+	Long: `agent-nexus - 一键自动化配置各种 AI coding agent
 
 功能：
   1. 自动发现本机已安装的 AI agent (codex, claude, kimi, deepseek, opencode 等)
@@ -32,12 +32,12 @@ var rootCmd = &cobra.Command{
   注意: qoder/trae/codebuddy/windsurf 使用自有AI后端，无法配置
 
 用法：
-  go-agent-config discover   扫描并列出已安装的 agent
-  go-agent-config detect     检测 CCX Desktop 代理配置
-  go-agent-config backup     备份所有配置
-  go-agent-config configure  备份后自动配置所有可配置的 agent
-  go-agent-config status     显示配置状态
-  go-agent-config route      显示模型路由表
+  agent-nexus discover   扫描并列出已安装的 agent
+  agent-nexus detect     检测 CCX Desktop 代理配置
+  agent-nexus backup     备份所有配置
+  agent-nexus configure  备份后自动配置所有可配置的 agent
+  agent-nexus status     显示配置状态
+  agent-nexus route      显示模型路由表
 `,
 }
 
@@ -327,3 +327,6 @@ func Execute() {
 		os.Exit(1)
 	}
 }
+
+
+

@@ -1,4 +1,4 @@
-# go-agent-config — AI Agent 配置自动化工具
+# agent-nexus — AI Agent 配置自动化工具
 
 一键自动发现、备份、配置本机所有 AI coding agent（codex / claude / kimi / deepseek / opencode / cursor 等），将它们统一接入 CCX Desktop 代理。
 
@@ -8,7 +8,7 @@
 - **代理检测**：自动读取 CCX Desktop 配置（URL、Key、模型映射表）
 - **配置写入**：支持 `--url` / `--key` 命令行选项，也可直接输入 URL 和 Key
 - **自动备份**：配置生效前自动备份原有配置文件
-- **一键配置**：`go-agent-config configure` 完成完整流程
+- **一键配置**：`agent-nexus configure` 完成完整流程
 - **模型路由**：三层模型重定向机制，匹配最佳后端
 - **彩色输出**：终端彩色状态显示
 
@@ -36,35 +36,35 @@
 
 ### 方式一：使用编译好的可执行文件
 
-直接下载 `go-agent-config.exe`，在终端运行：
+直接下载 `agent-nexus.exe`，在终端运行：
 
 ```powershell
-.\go-agent-config.exe --help
+.\agent-nexus.exe --help
 ```
 
 ### 方式二：从源码编译
 
 ```powershell
 go mod tidy
-go build -o go-agent-config.exe
+go build -o agent-nexus.exe
 ```
 
 ## 快速开始
 
 ```powershell
 # 一键扫描 → 检测代理 → 备份 → 配置
-go-agent-config configure
+agent-nexus configure
 ```
 
 ## 命令参考
 
 ```powershell
-go-agent-config discover   扫描并列出已安装的 AI agent
-go-agent-config detect     检测 CCX Desktop 代理配置（URL、Key、模型映射）
-go-agent-config backup     备份所有 agent 配置文件
-go-agent-config configure  备份后一键自动配置所有可配置的 agent
-go-agent-config status     显示各 agent 当前配置状态
-go-agent-config route      显示模型路由表
+agent-nexus discover   扫描并列出已安装的 AI agent
+agent-nexus detect     检测 CCX Desktop 代理配置（URL、Key、模型映射）
+agent-nexus backup     备份所有 agent 配置文件
+agent-nexus configure  备份后一键自动配置所有可配置的 agent
+agent-nexus status     显示各 agent 当前配置状态
+agent-nexus route      显示模型路由表
 ```
 
 ## --url / --key 选项（新增）
@@ -72,9 +72,9 @@ go-agent-config route      显示模型路由表
 支持直接通过命令行传入代理 URL 和 API Key，无需依赖 CCX Desktop 自动嗅探：
 
 ```powershell
-go-agent-config configure --url http://127.0.0.1:8080/v1 --key sk-xxx
-go-agent-config detect --url http://proxy:9000/v1 --key abc
-go-agent-config route --url http://proxy:9000/v1 --key abc
+agent-nexus configure --url http://127.0.0.1:8080/v1 --key sk-xxx
+agent-nexus detect --url http://proxy:9000/v1 --key abc
+agent-nexus route --url http://proxy:9000/v1 --key abc
 ```
 
 不传参数时仍使用自动嗅探（原有行为不变）。
@@ -109,7 +109,7 @@ go-agent-config route --url http://proxy:9000/v1 --key abc
 ## 项目结构
 
 ```
-go-agent-config/
+agent-nexus/
 ├── main.go                          # 入口
 ├── go.mod
 ├── go.sum
@@ -171,3 +171,4 @@ writers: []ConfigWriter{
 ## License
 
 MIT
+

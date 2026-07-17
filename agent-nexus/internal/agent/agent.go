@@ -1,6 +1,6 @@
 package agent
 
-import "go-agent-config/internal/proxy"
+import "agent-nexus/internal/proxy"
 
 // ConfigWriter can apply proxy configuration to an agent
 type ConfigWriter interface {
@@ -42,3 +42,4 @@ func (r *WriterRegistry) Get(name string) ConfigWriter {
 func (r *WriterRegistry) All() []ConfigWriter {
 	return r.writers
 }
+

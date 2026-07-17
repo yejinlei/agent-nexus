@@ -1,7 +1,8 @@
 package main
 
-import "go-agent-config/cmd"
+import "agent-nexus/cmd"
 
 func main() {
 	cmd.Execute()
 }
+
