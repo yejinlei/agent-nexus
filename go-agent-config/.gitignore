@@ -1,0 +1,8 @@
+# Compiled binary
+go-agent-config.exe
+
+# Go build artifacts
+vendor/
+*.test
+*.out
+
