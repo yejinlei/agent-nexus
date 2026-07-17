@@ -16,21 +16,42 @@
 
 ### 可配置（通过代理转发）
 
-| Agent | 配置文件 | 类型 |
-|-------|---------|------|
-| codex | `~/.codex/config.toml` | CLI |
-| claude | `~/.claude/settings.json` | CLI |
-| kimi | `~/.kimi/config.toml` | CLI |
-| deepseek | `~/.deepseek/config.toml` | CLI |
-| opencode | `~/.config/opencode/opencode.jsonc` | CLI |
-| openclaw | `~/.openclaw/openclaw.json` | CLI |
-| cursor | `Cursor/User/settings.json` | IDE |
+| Agent | 配置文件 | 类型 | 协议 |
+|-------|---------|------|------|
+| codex | `~/.codex/config.toml` | CLI | OpenAI-compatible |
+| claude | `~/.claude/settings.json` | CLI | Anthropic |
+| kimi | `~/.kimi/config.toml` | CLI | ACP |
+| deepseek | `~/.deepseek/config.toml` | CLI | OpenAI-compatible |
+| opencode | `~/.config/opencode/opencode.jsonc` | CLI | AI SDK |
+| openclaw | `~/.openclaw/openclaw.json` | CLI | Custom |
+| cursor | `Cursor/User/settings.json` | IDE | OpenAI-compatible |
+| codebuddy | `~/.codebuddy/settings.json` | CLI | Anthropic (Claude Code兼容) |
+| hermes | `~/.hermes/config.yaml` | CLI | ACP |
+| kiro | `~/.kiro/config.yaml` | CLI | ACP |
+| grok | `~/.grok/config.yaml` | CLI | ACP |
+| qoder | `~/.qoder/config.yaml` | CLI | ACP |
+| trae | `~/.traecli/config.yaml` | CLI | ACP |
 
-### 不可配置（自有 AI 后端）
+### 不可配置（无外部模型配置字段）
 
-- qoder / trae / codebuddy / windsurf — VS Code 派生 IDE，AI 服务内置
-- zed — 无内置 AI Agent，依赖外部工具
-- lmstudio / clawx — 暂缺配置写入器
+| Agent | 类型 | 说明 |
+|-------|------|------|
+| antigravity | CLI | Google Gemini 服务，无外部模型配置字段 |
+| copilot | CLI | 模型由 GitHub 账户权益决定，无外部模型配置字段 |
+| deveco | CLI | 基于 OpenCode 引擎，内置华为账号认证与自有模型目录 |
+| pi | CLI | Inflection AI 代理，无外部模型配置字段 |
+| qoder-ide | IDE | VS Code 派生，自有 AI 后端 |
+| trae-ide | IDE | VS Code 派生，自有 AI 后端 |
+| codebuddy-ide | IDE | VS Code 派生，自有 AI 后端 |
+| windsurf | IDE | VS Code 派生，自有 AI 后端 |
+| zed | IDE | 无内置 AI Agent，依赖外部工具 |
+
+### 暂缺配置写入器
+
+| Agent | 类型 | 说明 |
+|-------|------|------|
+| lmstudio | CLI | 待实现配置写入器 |
+| clawx | IDE | 待实现配置写入器 |
 
 ## 安装
 
@@ -67,7 +88,7 @@ agent-nexus status     显示各 agent 当前配置状态
 agent-nexus route      显示模型路由表
 ```
 
-## --url / --key 选项（新增）
+## --url / --key 选项
 
 支持直接通过命令行传入代理 URL 和 API Key，无需依赖 CCX Desktop 自动嗅探：
 
@@ -93,6 +114,12 @@ agent-nexus route --url http://proxy:9000/v1 --key abc
 | deepseek | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
 | opencode | myccx/glm-5.2 | glm-5.2 |
 | cursor | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| codebuddy | fable | glm-5.2 |
+| hermes | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| kiro | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| grok | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| qoder | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| trae | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
 
 **第三层：DeepSeek CLI 备选直连** — 配置中保留 sensenova 直连方案（注释形式）
 
@@ -124,7 +151,13 @@ agent-nexus/
 │   │   ├── deepseek.go
 │   │   ├── opencode.go
 │   │   ├── openclaw.go
-│   │   └── cursor.go
+│   │   ├── cursor.go
+│   │   ├── codebuddy.go             # [新增] 腾讯 CodeBuddy CLI
+│   │   ├── hermes.go                # [新增] Hermes (Nous Research)
+│   │   ├── kiro.go                  # [新增] Kiro CLI (Amazon)
+│   │   ├── grok.go                  # [新增] Grok (xAI)
+│   │   ├── qoder_cli.go             # [新增] Qoder CLI (阿里)
+│   │   └── trae_cli.go              # [新增] Trae CLI (字节跳动)
 │   ├── backup/
 │   │   └── backup.go                # 备份逻辑
 │   ├── discover/
@@ -171,4 +204,3 @@ writers: []ConfigWriter{
 ## License
 
 MIT
-

@@ -121,8 +121,8 @@ func Detect() (*Proxy, error) {
 func parsePort(s string) int {
 	n := 0
 	for _, c := range s {
-		if c >= "0" && c <= "9" {
-			n = n*10 + int(c-"0")
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
 		}
 	}
 	return n

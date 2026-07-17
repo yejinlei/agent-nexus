@@ -19,6 +19,7 @@ type WriterRegistry struct {
 func NewWriterRegistry() *WriterRegistry {
 	return &WriterRegistry{
 		writers: []ConfigWriter{
+			// 原有可配置 Agent
 			newCodexWriter(),
 			newClaudeWriter(),
 			newKimiWriter(),
@@ -26,6 +27,13 @@ func NewWriterRegistry() *WriterRegistry {
 			newOpenCodeWriter(),
 			newOpenClawWriter(),
 			newCursorWriter(),
+			// 新增可配置 Agent
+			newCodeBuddyWriter(),
+			newHermesWriter(),
+			newKiroWriter(),
+			newGrokWriter(),
+			newQoderWriter(),
+			newTraeWriter(),
 		},
 	}
 }
@@ -42,4 +50,3 @@ func (r *WriterRegistry) Get(name string) ConfigWriter {
 func (r *WriterRegistry) All() []ConfigWriter {
 	return r.writers
 }
-
