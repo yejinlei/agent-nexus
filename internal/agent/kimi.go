@@ -44,7 +44,7 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
 	content += "default = \"" + targetModel + "\"\n\n"
 	content += "[models]\n"
 	content += "\n"
-	content += "[\"models.gpt-5.5\"]\n"
+	content += "[\"models." + modelName + "\"]\n"
 	content += "provider = \"ccx\"\n"
 	content += "base_model = \"" + targetModel + "\"\n"
 	content += "\n"
@@ -83,5 +83,7 @@ func (w *kimiWriter) Status(path string) (bool, string) {
 	}
 	return false, "未配置代理"
 }
+
+
 
 
