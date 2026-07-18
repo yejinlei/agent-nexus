@@ -15,7 +15,7 @@ func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 	routing := []ModelMapping{
 		{"codex", "gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
 		{"claude", "fable", "glm-5.2", "CCX"},
-		{"kimi", "ccx/gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
+		{"kimi", "gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
 		{"deepseek", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
 		{"opencode", "myccx/glm-5.2", "glm-5.2", "CCX"},
 		{"cursor", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
@@ -23,7 +23,7 @@ func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 
 	if p.ModelMap != nil {
 		for src, dst := range p.ModelMap {
-			routing = append(routing, ModelMapping{Agent: "CCX-proxy", Model: src, Target: dst, Source: "CCX-modelmap"})
+			routing = append(routing, ModelMapping{Agent: "CCX-proxy", Model: src, Target: dst, Source: string(p.Source)})
 		}
 	}
 
@@ -42,5 +42,6 @@ func FindBestModel(agentName, proxyBaseModel string, table []ModelMapping) (stri
 	}
 	return "", ""
 }
+
 
 
