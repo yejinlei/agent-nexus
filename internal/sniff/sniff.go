@@ -16,23 +16,102 @@ type SniffResult struct {
 	OpenAICap      bool
 	AnthropicCap   bool
 	ModelCount     int
-	Models         []string
+	Models         []ModelItem
 	DetectedFormat string
 	Notes          string
+}
+
+// ModelItem represents one model in the /v1/models list response.
+type ModelItem struct {
+	ID      string                 `json:"id"`
+	Object  string                 `json:"object"`
+	Created int64                  `json:"created"`
+	OwnedBy string                 `json:"owned_by"`
+	Raw     map[string]interface{} `json:"-"` // extra provider-specific fields
+}
+
+// FormatVerbose returns a human-readable multi-line string of all known fields.
+func (m *ModelItem) FormatVerbose() string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("    %-40s", m.ID))
+	if m.Object != "" {
+		lines = append(lines, fmt.Sprintf("    %-40s %s", "type:", m.Object))
+	}
+	if m.OwnedBy != "" {
+		lines = append(lines, fmt.Sprintf("    %-40s %s", "owner:", m.OwnedBy))
+	}
+	if m.Created > 0 {
+		lines = append(lines, fmt.Sprintf("    %-40s %s", "created:", time.Unix(m.Created, 0).Format("2006-01-02")))
+	}
+	for k, v := range m.Raw {
+		lines = append(lines, fmt.Sprintf("    %-40s %v", k+":", v))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ModelCapabilities returns a short capability summary from extra fields or inferred from the model ID.
+func (m *ModelItem) ModelCapabilities() []string {
+	caps := []string{}
+
+	if v, ok := m.Raw["capabilities"]; ok {
+		if cap, ok := v.(map[string]interface{}); ok {
+			for name := range cap {
+				caps = append(caps, "capability:"+name)
+			}
+		}
+	}
+	if v, ok := m.Raw["context_window"]; ok {
+		caps = append(caps, fmt.Sprintf("context:%v", v))
+	}
+	if v, ok := m.Raw["context_length"]; ok {
+		caps = append(caps, fmt.Sprintf("context:%v", v))
+	}
+	if v, ok := m.Raw["max_tokens"]; ok {
+		caps = append(caps, fmt.Sprintf("max_tokens:%v", v))
+	}
+	if v, ok := m.Raw["max_output_length"]; ok {
+		caps = append(caps, fmt.Sprintf("max_output:%v", v))
+	}
+	if v, ok := m.Raw["input_tokens"]; ok {
+		caps = append(caps, fmt.Sprintf("input_tokens:%v", v))
+	}
+	if v, ok := m.Raw["output_tokens"]; ok {
+		caps = append(caps, fmt.Sprintf("output_tokens:%v", v))
+	}
+	if v, ok := m.Raw["input_modalities"]; ok {
+		caps = append(caps, fmt.Sprintf("input:%v", v))
+	}
+	if v, ok := m.Raw["output_modalities"]; ok {
+		caps = append(caps, fmt.Sprintf("output:%v", v))
+	}
+	if v, ok := m.Raw["supported_features"]; ok {
+		caps = append(caps, fmt.Sprintf("features:%v", v))
+	}
+	if v, ok := m.Raw["quantization"]; ok {
+		caps = append(caps, fmt.Sprintf("quant:%v", v))
+	}
+
+	id := strings.ToLower(m.ID)
+	if strings.Contains(id, "image") || strings.Contains(id, "vision") {
+		caps = append(caps, "inferred:vision")
+	}
+	if strings.Contains(id, "audio") || strings.Contains(id, "whisper") {
+		caps = append(caps, "inferred:audio")
+	}
+	if strings.Contains(id, "completion") || strings.Contains(id, "text") {
+		caps = append(caps, "inferred:completion")
+	}
+
+	if len(caps) == 0 {
+		caps = append(caps, "(无扩展能力字段)")
+	}
+	return caps
 }
 
 // ModelsResponse mirrors the OpenAI /v1/models JSON shape.
 type ModelsResponse struct {
 	Object string      `json:"object"`
 	Data   []ModelItem `json:"data"`
-}
-
-// ModelItem represents one model in the list response.
-type ModelItem struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
 }
 
 // ChatCompletionResponse mirrors the OpenAI /v1/chat/completions JSON shape.
@@ -88,15 +167,11 @@ func Sniff(baseURL, apiKey string) (*SniffResult, error) {
 		return nil, fmt.Errorf("--key 为必选参数")
 	}
 
-	// Normalise: strip trailing slash, then check if /v1 is already present.
 	baseURL = strings.TrimSuffix(baseURL, "/")
-
-	// Ensure the URL ends with /v1. Do not double /v1 if already present.
 	if !strings.HasSuffix(baseURL, "/v1") {
 		baseURL += "/v1"
 	}
 
-	// Probe the resolved /v1 path. All three probes always run.
 	result := sniffPath(baseURL, apiKey)
 	return result, nil
 }
@@ -104,7 +179,7 @@ func Sniff(baseURL, apiKey string) (*SniffResult, error) {
 // sniffPath probes a single base URL that is guaranteed to end with /v1.
 // All three probes (models, OpenAI chat, Anthropic messages) are always executed.
 func sniffPath(baseURL, apiKey string) *SniffResult {
-	client := &http.Client{Timeout: 15 * time.Second}
+		client := &http.Client{Timeout: 15 * time.Second}
 
 	result := &SniffResult{
 		BaseURL: baseURL,
@@ -119,15 +194,14 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		models, count := parseModels(modelsBody)
 		if count > 0 {
 			result.Models = models
+			fillExtraFields(models, modelsBody)
 			result.ModelCount = count
-			result.DetectedFormat = "OpenAI Compatible (models endpoint)"
 			// Use the first real model from the list for subsequent probes.
-			// This avoids 404 from hardcoded non-existent model names.
-			testModel = models[0]
+			testModel = models[0].ID
+			result.DetectedFormat = "OpenAI Compatible (models endpoint)"
 		}
 	}
 
-	// If no real model was fetched, fall back to a generic placeholder.
 	if testModel == "" {
 		testModel = "gpt-3.5-turbo"
 	}
@@ -170,9 +244,11 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 
 	if msgsErr != nil {
 		if result.Notes != "" {
+			if strings.HasSuffix(result.Notes, "; ") {
+				result.Notes = result.Notes[:len(result.Notes)-2]
+			}
 			result.Notes += fmt.Sprintf("; Anthropic messages 端点: %v", msgsErr)
 		} else {
-			// If Notes is empty, replace it entirely (avoid empty prefix).
 			result.Notes = fmt.Sprintf("Anthropic messages 端点: %v", msgsErr)
 		}
 	} else if len(msgsResp) > 0 {
@@ -182,6 +258,9 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 			result.DetectedFormat += " + Anthropic Messages API"
 		} else {
 			if result.Notes != "" {
+				if strings.HasSuffix(result.Notes, "; ") {
+					result.Notes = result.Notes[:len(result.Notes)-2]
+				}
 				result.Notes += fmt.Sprintf("; Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120))
 			} else {
 				result.Notes = fmt.Sprintf("Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120))
@@ -192,9 +271,11 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	// If no formats detected at all, note it.
 	if result.ModelCount == 0 && result.OpenAICap == false && result.AnthropicCap == false {
 		if result.Notes == "" {
-			// Neither probes worked; try a final GET on the root to see if we can reach it.
 			result.Notes = "未从该 endpoint 探测到可用模型，可能是自定义格式或需要特殊认证"
 		} else if !strings.Contains(result.Notes, "未从该 endpoint") {
+			if strings.HasSuffix(result.Notes, "; ") {
+				result.Notes = result.Notes[:len(result.Notes)-2]
+			}
 			result.Notes += "; 未探测到标准格式"
 		}
 	}
@@ -203,8 +284,7 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 }
 
 // doRequest performs an HTTP request and returns the response body bytes.
-// Non-2xx responses return an error; 2xx responses return the body bytes.
-func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([]byte, error) {
+func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([ ]byte, error) {
 	req, err := http.NewRequest(method, urlStr, body)
 	if err != nil {
 		return nil, err
@@ -229,16 +309,52 @@ func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reade
 }
 
 // parseModels tries to parse the /v1/models response.
-func parseModels(body []byte) ([]string, int) {
+func parseModels(body []byte) ([]ModelItem, int) {
 	var mr ModelsResponse
 	if err := json.Unmarshal(body, &mr); err != nil {
 		return nil, 0
 	}
-	names := make([]string, len(mr.Data))
-	for i, m := range mr.Data {
-		names[i] = m.ID
+	return mr.Data, len(mr.Data)
+}
+
+// fillExtraFields populates the Raw extra fields for each model item.
+func fillExtraFields(models []ModelItem, rawBody []byte) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(rawBody, &raw); err != nil {
+		return
 	}
-	return names, len(names)
+
+	data, ok := raw["data"].([]interface{})
+	if !ok {
+		return
+	}
+
+	knownFields := map[string]bool{
+		"id": true, "object": true, "created": true, "owned_by": true,
+	}
+
+	for _, entry := range data {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		modelID, ok := m["id"].(string)
+		if !ok {
+			}
+
+		extras := map[string]interface{}{}
+		for k, v := range m {
+			if !knownFields[k] {
+				extras[k] = v
+			}
+		}
+
+		for i := range models {
+			if models[i].ID == modelID {
+				models[i].Raw = extras
+			}
+		}
+	}
 }
 
 // truncate cuts s to n characters, appending "..." when truncated.

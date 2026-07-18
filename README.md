@@ -6,10 +6,12 @@
 
 - **自动发现**：扫描本机已安装的 AI agent（CLI 工具 + IDE）
 - **代理检测**：自动读取 CCX Desktop 配置（URL、Key、模型映射表）
-- **配置写入**：支持 `--url` / `--key` 命令行选项，也可直接输入 URL 和 Key
-- **自动备份**：配置生效前自动备份原有配置文件
-- **一键配置**：`agent-nexus configure` 完成完整流程
+- **配置写入**：支持 `--url` / `--key` 全局选项，也可直接输入 URL 和 Key
+- **自动备份**：配置生效前自动创建版本化快照
+- **一键配置**：`agent-nexus configure --agents all` 完成完整流程
 - **模型路由**：三层模型重定向机制，匹配最佳后端
+- **版本化管理**：配置快照（snapshot）、分支（branch）、差异对比（diff）、回滚（restore）
+- **LLM 嗅探**：自动检测 LLM 提供商的消息格式和可用模型
 - **彩色输出**：终端彩色状态显示
 
 ## 支持的 Agent
@@ -25,7 +27,7 @@
 | opencode | `~/.config/opencode/opencode.jsonc` | CLI | AI SDK |
 | openclaw | `~/.openclaw/openclaw.json` | CLI | Custom |
 | cursor | `Cursor/User/settings.json` | IDE | OpenAI-compatible |
-| codebuddy | `~/.codebuddy/settings.json` | CLI | Anthropic (Claude Code兼容) |
+| codebuddy | `~/.codebuddy/settings.json` | CLI | Anthropic (Claude Code 兼容) |
 | hermes | `~/.hermes/config.yaml` | CLI | ACP |
 | kiro | `~/.kiro/config.yaml` | CLI | ACP |
 | grok | `~/.grok/config.yaml` | CLI | ACP |
@@ -45,13 +47,6 @@
 | codebuddy-ide | IDE | VS Code 派生，自有 AI 后端 |
 | windsurf | IDE | VS Code 派生，自有 AI 后端 |
 | zed | IDE | 无内置 AI Agent，依赖外部工具 |
-
-### 暂缺配置写入器
-
-| Agent | 类型 | 说明 |
-|-------|------|------|
-| lmstudio | CLI | 待实现配置写入器 |
-| clawx | IDE | 待实现配置写入器 |
 
 ## 安装
 
@@ -73,100 +68,184 @@ go build -o agent-nexus.exe
 ## 快速开始
 
 ```powershell
-# 一键扫描 → 检测代理 → 备份 → 配置
-agent-nexus configure
+# 一键扫描 → 检测代理 → 创建快照 → 配置所有已安装的 agent
+agent-nexus configure --agents all
 ```
 
 ## 命令参考
 
-```powershell
-agent-nexus discover   扫描并列出已安装的 AI agent
-agent-nexus detect     检测 CCX Desktop 代理配置（URL、Key、模型映射）
-agent-nexus backup     备份所有 agent 配置文件
-agent-nexus configure  备份后一键自动配置所有可配置的 agent
-agent-nexus status     显示各 agent 当前配置状态
-agent-nexus route      显示模型路由表
+```
+agent-nexus configure --agents <agents>   备份后自动配置指定的 agent（必选 --agents）
+agent-nexus discover [-v]                  扫描已安装的 agent（-v 显示模型详情）
+agent-nexus detect                         检测 CCX Desktop 代理配置
+agent-nexus status                         显示各 agent 当前配置状态
+agent-nexus route                          显示模型路由表
+agent-nexus backup [-b <branch>] [-m <msg>] 备份所有配置（创建快照）
+agent-nexus snapshot [-b <branch>] [-m <msg>] 创建命名快照
+agent-nexus version                        列出所有配置快照
+agent-nexus restore -s <id>                恢复到指定快照（支持 "latest"）
+agent-nexus diff --old <id> --new <id>     对比两个快照的差异
+agent-nexus branch                         管理配置分支（create / switch / list / show）
+agent-nexus sniff -u <url> -k <key> [-v]   嗅探 LLM 提供商的消息格式和可用模型
 ```
 
-## --url / --key 选项
+### 全局选项
 
-支持直接通过命令行传入代理 URL 和 API Key，无需依赖 CCX Desktop 自动嗅探：
+`--url` 和 `--key` 是全局选项，可用于所有命令，跳过自动嗅探直接指定代理地址和密钥：
 
 ```powershell
-agent-nexus configure --url http://127.0.0.1:8080/v1 --key sk-xxx
+agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-xxx
 agent-nexus detect --url http://proxy:9000/v1 --key abc
 agent-nexus route --url http://proxy:9000/v1 --key abc
+agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 ```
-
-不传参数时仍使用自动嗅探（原有行为不变）。
 
 ## 模型路由（三层机制）
 
+```mermaid
+flowchart LR
+    A["Agent 传入<br/>模型名"] --> B["第一层<br/>CCX Desktop 自动映射"]
+    B --> C["第二层<br/>写入器默认模型"]
+    C --> D["第三层<br/>DeepSeek CLI 直连<br/>（注释保留）"]
+    D --> E["实际后端<br/>sensenova / glm"]
+```
+
 **第一层：CCX Desktop 自动映射** — Agent 传入模型名（如 `gpt-5.5`），CCX 自动映射到实际后端模型
 
-**第二层：写入器默认模型**
+**第二层：写入器默认模型** — agent-nexus 写入各 agent 配置文件时使用的默认模型名
 
-| Agent | 写入模型 | → 实际后端 |
-|-------|---------|-----------|
-| codex | gpt-5.5 | sensenova-6.7-flash-lite |
-| claude | fable | glm-5.2 |
-| kimi | ccx/gpt-5.5 | sensenova-6.7-flash-lite |
-| deepseek | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| opencode | myccx/glm-5.2 | glm-5.2 |
-| cursor | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| codebuddy | fable | glm-5.2 |
-| hermes | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| kiro | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| grok | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| qoder | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
-| trae | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite |
+| Agent | 写入模型 | → 实际后端 | 来源 |
+|-------|---------|-----------|------|
+| codex | gpt-5.5 | sensenova-6.7-flash-lite | CCX 映射 |
+| claude | fable | glm-5.2 | CCX 映射 |
+| kimi | gpt-5.5 | sensenova-6.7-flash-lite | CCX 映射 |
+| deepseek | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | 直连 |
+| opencode | myccx/glm-5.2 | glm-5.2 | CCX 映射 |
+| cursor | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | 直连 |
+| openclaw | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| codebuddy | fable | glm-5.2 | CCX 映射 |
+| hermes | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| kiro | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| grok | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| qoder | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| trae | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
 
 **第三层：DeepSeek CLI 备选直连** — 配置中保留 sensenova 直连方案（注释形式）
 
-## 备份与恢复
+### 模型来源说明
 
-备份自动存储于：
+所有可配置 agent 均通过 OpenAI 兼容协议接入，支持自定义模型名。用户可通过 CCX Desktop 的模型重定义（model redefinition）将自定义模型名映射到后端实际模型。
+
+## 配置快照与版本化管理
+
+agent-nexus 引入类似 Git 的配置版本管理系统，支持快照、分支、差异对比和回滚：
+
+```mermaid
+graph TD
+    S1["快照 1<br/>(main)"] --> S2["快照 2<br/>(main)"]
+    S2 --> S3["快照 3<br/>(main)"]
+    S2 --> S4["快照 4<br/>(dev)"]
+    S3 --> S5["快照 5<br/>(main)"]
+    S5 --> |回滚| S3
+```
+
+| 命令 | 功能 |
+|------|------|
+| `snapshot` | 创建命名快照，类似 `git commit` |
+| `version` | 列出所有快照（版本历史），显示分支、时间、信息、文件列表 |
+| `diff --old A --new B` | 对比两个快照的差异（新增 / 删除 / 修改 / 未变） |
+| `restore -s <id>` | 恢复到指定快照，支持 `latest` |
+| `branch create <name>` | 创建新分支 |
+| `branch switch <name>` | 切换到指定分支 |
+| `branch list` | 列出所有分支 |
+| `branch show` | 显示当前分支信息 |
+| `backup` | 兼容旧格式的备份（自动版本化，默认 `main` 分支） |
+
+### 快照存储结构
 
 ```
-~/.codex/backups/agent-configs-YYYY-MM-DD_HH-MM-SS/
+~/.codex/backups/
+├── versioning.json          # 元数据注册表（快照索引 + 分支信息）
+└── snapshots/
+    ├── 2026-07-17_14-30-00/  # 快照 1（原始备份文件）
+    ├── 2026-07-17_15-00-00/  # 快照 2
+    └── ...
 ```
 
-回滚时，将备份目录中的配置文件覆盖回原位即可。
+## 工作流程
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Tool as agent-nexus
+    participant Proxy as CCX Desktop 代理
+    participant Backend as sensenova 后端
+    participant FS as 文件系统/备份
+
+    User->>Tool: agent-nexus configure --agents all
+    Tool->>Proxy: 检测代理配置（--url/--key 或自动嗅探）
+    Proxy-->>Tool: URL / Key / 模型映射表
+    Tool->>FS: 扫描已安装的 agent
+    FS-->>Tool: agent 列表 + 配置文件路径
+    Tool->>FS: 创建配置快照（versioning.json + snapshots/）
+    FS-->>Tool: 快照 ID
+    Tool->>FS: 备份现有配置
+    FS-->>Tool: 备份完成
+    Tool->>FS: 逐个配置可配置的 agent
+    FS-->>Tool: 配置结果（成功/跳过）
+    Tool-->>User: 显示配置结果 + 模型路由表
+    User->>Backend: 使用 agent 调用 LLM
+    Backend-->>User: 响应
+```
 
 ## 项目结构
 
 ```
 agent-nexus/
 ├── main.go                          # 入口
-├── go.mod
-├── go.sum
+├── go.mod / go.sum
+├── AGENTS.md                        # Multica 运行时配置（自动生成，勿编辑）
+├── README.md                        # 本文档
+├── MANUAL.md                        # 用户使用手册
 ├── cmd/
-│   └── root.go                      # Cobra CLI 命令定义
-├── internal/
-│   ├── agent/                       # 各 agent 配置写入器（可插拔）
-│   │   ├── agent.go                 # 接口 + 注册表
-│   │   ├── codex.go
-│   │   ├── claude.go
-│   │   ├── kimi.go
-│   │   ├── deepseek.go
-│   │   ├── opencode.go
-│   │   ├── openclaw.go
-│   │   ├── cursor.go
-│   │   ├── codebuddy.go             # [新增] 腾讯 CodeBuddy CLI
-│   │   ├── hermes.go                # [新增] Hermes (Nous Research)
-│   │   ├── kiro.go                  # [新增] Kiro CLI (Amazon)
-│   │   ├── grok.go                  # [新增] Grok (xAI)
-│   │   ├── qoder_cli.go             # [新增] Qoder CLI (阿里)
-│   │   └── trae_cli.go              # [新增] Trae CLI (字节跳动)
-│   ├── backup/
-│   │   └── backup.go                # 备份逻辑
-│   ├── discover/
-│   │   └── discover.go              # 自动发现 agent
-│   ├── model/
-│   │   └── model.go                 # 模型路由表
-│   └── proxy/
-│       └── proxy.go                 # CCX Desktop 代理检测
-└── README.md
+│   └── root.go                      # Cobra CLI 命令定义（全部子命令）
+└── internal/
+    ├── agent/                       # 各 agent 配置写入器（可插拔）
+    │   ├── agent.go                 # ConfigWriter 接口 + WriterRegistry 注册表
+    │   ├── agent_test.go
+    │   ├── codex.go                 # Codex (Anthropic)
+    │   ├── claude.go                # Claude Code (Anthropic)
+    │   ├── kimi.go                  # Kimi (月之暗面)
+    │   ├── deepseek.go              # DeepSeek CLI
+    │   ├── opencode.go              # OpenCode
+    │   ├── openclaw.go              # OpenClaw
+    │   ├── cursor.go                # Cursor IDE
+    │   ├── codebuddy.go             # CodeBuddy CLI (腾讯)
+    │   ├── hermes.go                # Hermes (Nous Research)
+    │   ├── kiro.go                  # Kiro CLI (Amazon)
+    │   ├── grok.go                  # Grok (xAI)
+    │   ├── qoder_cli.go             # Qoder CLI (阿里)
+    │   └── trae_cli.go              # Trae CLI (字节跳动)
+    ├── backup/
+    │   ├── backup.go                # 备份逻辑（兼容旧格式）
+    │   └── backup_test.go
+    ├── color/
+    │   ├── color.go                 # 终端彩色输出
+    │   └── color_test.go
+    ├── discover/
+    │   ├── discover.go              # 自动发现 agent
+    │   └── discover_test.go
+    ├── model/
+    │   ├── model.go                 # 模型路由表构建
+    │   └── model_test.go
+    ├── proxy/
+    │   ├── proxy.go                 # CCX Desktop 代理检测
+    │   └── proxy_test.go
+    ├── sniff/
+    │   └── sniff.go                 # LLM endpoint 嗅探（消息格式 + 模型列表）
+    └── versioning/
+        ├── versioning.go            # 配置版本化（快照/分支/差异）
+        └── versioning_test.go
 ```
 
 ## 扩展新 Agent
@@ -198,8 +277,10 @@ writers: []ConfigWriter{
 
 - CCX Desktop 需保持运行（监听 `127.0.0.1:3688`）
 - Cursor 的字段名取决于版本，不匹配时需通过 Cursor 设置 UI 手动填入
+- `configure` 命令 **必须** 指定 `--agents` 参数（`all` 或逗号分隔的 agent 名称）
+- 配置快照存储于 `~/.codex/backups/`，使用 `agent-nexus version` 查看所有快照
 - 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
-- 配置生效前所有原始配置文件均已备份
+- 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
 
 ## License
 

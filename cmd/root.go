@@ -823,8 +823,9 @@ var routeCmd = &cobra.Command{
 
 // sniffCmd sniffs an LLM provider endpoint to detect supported message formats and models.
 var (
-    sniffURL string
-    sniffKey string
+    sniffURL     string
+    sniffKey     string
+    sniffVerbose bool
 )
 
 var sniffCmd = &cobra.Command{
@@ -835,12 +836,15 @@ var sniffCmd = &cobra.Command{
 
 使用方式:
   .\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
-  .\agent-nexus.exe sniff --url http://127.0.0.1:8080/v1 --key sk-xxx
+  .\agent-nexus.exe sniff --url http://127.0.0.1:8080/v1 --key sk-xxx -v
 
 该命令会依次探测:
   1. /v1/models           获取模型列表
   2. /v1/chat/completions  验证 OpenAI 格式兼容性
   3. /v1/messages          验证 Anthropic Messages API 兼容性
+
+详细模式 (-v):
+  显示每个模型的完整信息（字段、能力推断等）
 `,
     RunE: func(cmd *cobra.Command, args []string) error {
         if sniffURL == "" || sniffKey == "" {
@@ -875,9 +879,22 @@ var sniffCmd = &cobra.Command{
         }
 
         if result.ModelCount > 0 {
-            fmt.Printf("\n  可用模型 (%d):\n", result.ModelCount)
-            for _, m := range result.Models {
-                fmt.Printf("    - %s\n", m)
+            if sniffVerbose {
+                // Detailed mode: show full info per model
+                fmt.Printf("\n  可用模型 (%d):\n", result.ModelCount)
+                for i, m := range result.Models {
+                    if i > 0 {
+                        fmt.Println()
+                    }
+                    fmt.Println(m.FormatVerbose())
+                    caps := m.ModelCapabilities()
+                    fmt.Printf("    %-40s %s\n", "capabilities:", strings.Join(caps, ", "))
+                }
+            } else {
+                fmt.Printf("\n  可用模型 (%d):\n", result.ModelCount)
+                for _, m := range result.Models {
+                    fmt.Printf("    - %s\n", m.ID)
+                }
             }
         }
 
@@ -925,6 +942,7 @@ func init() {
     sniffCmd.Flags().StringVar(&sniffKey, "key", "", "LLM provider API key（必选）")
     sniffCmd.MarkFlagRequired("url")
     sniffCmd.MarkFlagRequired("key")
+    sniffCmd.Flags().BoolVarP(&sniffVerbose, "verbose", "v", false, "显示每个模型的详细信息")
 
     rootCmd.AddCommand(discoverCmd)
     rootCmd.AddCommand(detectCmd)

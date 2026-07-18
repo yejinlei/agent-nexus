@@ -1,12 +1,13 @@
 # Task Assignment
 
-**Issue ID:** cb96c66d-088d-46da-8eb2-3e7b6571a115
+**Issue ID:** 154000ec-55d8-47fa-87ba-c8f98182e129
 
-**Trigger:** New Assignment
+**Trigger:** Comment Reply
+**Triggering comment ID:** `fb0b2b65-9896-4e49-a6bd-4ceb243fbf6b`
 
 ## Quick Start
 
-Run `multica issue get cb96c66d-088d-46da-8eb2-3e7b6571a115 --output json` to fetch the full issue details.
+Run `multica issue get 154000ec-55d8-47fa-87ba-c8f98182e129 --output json` to fetch the full issue details.
 
 ## Agent Skills
 

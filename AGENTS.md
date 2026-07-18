@@ -46,6 +46,12 @@ Multica 是一个开源、AI 原生的团队工作区(源码:https://github.com/
 
 如果你发现 `multica --help`、官方文档或 GitHub 仓库出现与本 instruction 相冲突或重要补充的变化(命令改名、新增核心概念、删除参数),先告诉用户、提议一份更新后的 instruction,然后再继续。不要静默地改自己的 instruction;等用户确认,再通过 CLI 应用变更。
 
+## Task Initiator
+
+This task was initiated by **yejinlei** (4010896@qq.com), a member of this workspace.
+
+Attribute this request to that person and apply any per-person privacy or access rules your instructions define — in a workspace many people can reach, the initiator (not the runtime owner) is who you are answering. Your Multica credentials stay scoped to the runtime owner, so this attribution does not widen what you can read or write — do not assume the initiator can see everything you can.
+
 ## Available Commands
 
 Prefer `--output json` for structured data. The default brief lists only the core agent loop and common issue create/update tasks; for everything else run `multica --help` or `multica <command> --help`.
@@ -99,23 +105,27 @@ Resources are pointers — open them only when relevant to the task. For `github
 - **What NOT to pin.** No secrets, tokens, or API keys. No logs or comment summaries. No runtime bookkeeping (attempts, run timestamps, agent ids). No single-run details — those belong in the result comment.
 - **Recommended keys** (use snake_case ASCII; reuse these names so queries stay consistent): `pr_url`, `pr_number`, `pipeline_status`, `deploy_url`, `external_issue_url`, `waiting_on`, `blocked_reason`, `decision`.
 
-## Instruction Precedence
-
-Agent Identity instructions have priority over the assignment workflow below. If a workflow step conflicts with Agent Identity, skip the conflicting action and continue with the remaining compatible steps. Never treat this runtime workflow as permission to change issue status, investigate, implement, or otherwise act beyond your Agent Identity.
-
 ### Workflow
 
-You are responsible for managing the issue status throughout your work, unless your Agent Identity forbids issue status changes.
+**This task was triggered by a NEW comment.** Your primary job is to respond to THIS specific comment, even if you have handled similar requests before in this session.
 
-1. Run `multica issue get cb96c66d-088d-46da-8eb2-3e7b6571a115 --output json` to understand your task
-2. Run `multica issue metadata list cb96c66d-088d-46da-8eb2-3e7b6571a115 --output json` to see what prior agents pinned — best-effort, empty `{}` and CLI failures are normal. See the `## Issue Metadata` section above for what to look for.
-3. Run `multica issue comment list cb96c66d-088d-46da-8eb2-3e7b6571a115 --recent 10 --output json` to catch up on recent active comment threads — this is mandatory, not optional. Earlier comments often carry context the issue body lacks (e.g. which repo to work in, the prior agent's findings, the reason the issue was reassigned to you). Skipping this step is the most common cause of agents acting on stale or incomplete instructions. Resolved threads come back folded — `--full` to expand. If the recent window shows that older context is needed, page older threads with the stderr `Next thread cursor:` values and the matching `--before` / `--before-id` flags until you have enough history.
-4. Run `multica issue status cb96c66d-088d-46da-8eb2-3e7b6571a115 in_progress` unless your Agent Identity forbids issue status changes; if it does, skip this step.
-5. Complete the task within your Agent Identity boundaries. Do not investigate, implement, create issues, update issues, or delegate if your Agent Identity forbids that action; if your role is delegation-only, perform the allowed delegation work and stop once that outcome is delivered.
-6. **Post your final results as a comment — this step is mandatory**: post it with `multica issue comment add cb96c66d-088d-46da-8eb2-3e7b6571a115` using the platform-correct non-inline mode from ## Comment Formatting (never inline `--content`). Your results are only visible to the user if posted via this CLI call; text in your terminal or run logs is NOT delivered.
-7. Before exiting: only if this run produced a fact that clears the high bar (important AND likely to be re-read by future runs on this same issue, e.g. a new PR URL or deploy URL), or you noticed a metadata key from entry that is now stale, pin or clear it via `multica issue metadata set`/`delete`. Most runs write nothing here — that is the expected outcome, not a gap. When in doubt, do not write. See the `## Issue Metadata` section above for the full bar.
-8. When done, run `multica issue status cb96c66d-088d-46da-8eb2-3e7b6571a115 in_review` unless your Agent Identity forbids issue status changes; if it does, skip this step.
-9. If blocked, run `multica issue status cb96c66d-088d-46da-8eb2-3e7b6571a115 blocked` unless your Agent Identity forbids issue status changes. Post a comment explaining the blocker unless your Agent Identity forbids issue comments.
+1. Run `multica issue get 154000ec-55d8-47fa-87ba-c8f98182e129 --output json` to understand the issue context
+2. Run `multica issue metadata list 154000ec-55d8-47fa-87ba-c8f98182e129 --output json` to see what prior agents pinned — best-effort, empty `{}` and CLI failures are normal. See the `## Issue Metadata` section above for what to look for.
+3. You're resuming the prior session, and the triggering comment is already included above. No other new comments on this issue since your last run. Use the active thread anchor `d8599e3d-25c4-43aa-bdd8-b1270a64eccd` and triggering comment ID `fb0b2b65-9896-4e49-a6bd-4ceb243fbf6b`. If your reply depends on thread context, do not rely only on resumed session memory — first pull the triggering conversation with: `multica issue comment list 154000ec-55d8-47fa-87ba-c8f98182e129 --thread d8599e3d-25c4-43aa-bdd8-b1270a64eccd --tail 30 --output json`.
+
+4. Find the triggering comment (ID: `fb0b2b65-9896-4e49-a6bd-4ceb243fbf6b`) and understand what is being asked — do NOT confuse it with previous comments
+5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.
+6. If a reply IS warranted: do any requested work first, then **decide whether to include any `@mention` link.** The default is NO mention. Only mention when you are escalating to a human owner who is not yet involved, delegating a concrete new sub-task to another agent for the first time, or the user explicitly asked you to loop someone in. Never @mention the agent you are replying to as a thank-you or sign-off.
+7. **If you reply, post it as a comment — this step is mandatory when you reply.** Text in your terminal or run logs is NOT delivered to the user. If you decide to reply, post it as a comment — always use the trigger comment ID below, do NOT reuse --parent values from previous turns in this session.
+
+On Windows, write the reply body to a UTF-8 file with your file-write tool first, then post with `--content-file`. Do NOT pipe via `--content-stdin` — PowerShell 5.1's `$OutputEncoding` defaults to ASCIIEncoding when piping to native commands and silently drops non-ASCII (Chinese, Japanese, Cyrillic, accents, emoji) as `?` before bytes reach `multica.exe`. See ## Comment Formatting above for the full rule:
+
+    multica issue comment add 154000ec-55d8-47fa-87ba-c8f98182e129 --parent fb0b2b65-9896-4e49-a6bd-4ceb243fbf6b --content-file ./reply.md
+    Remove-Item ./reply.md
+
+Do NOT write literal `\n` escapes to simulate line breaks; the file preserves real newlines.
+8. Before exiting: only if this run produced a fact that clears the high bar (important AND likely to be re-read by future runs on this same issue, e.g. a new PR URL or deploy URL), or you noticed a metadata key from entry that is now stale, pin or clear it via `multica issue metadata set`/`delete`. Most runs write nothing here — that is the expected outcome, not a gap. When in doubt, do not write. See the `## Issue Metadata` section above for the full bar.
+9. Do NOT change the issue status unless the comment explicitly asks for it
 
 ## Sub-issue Creation
 
