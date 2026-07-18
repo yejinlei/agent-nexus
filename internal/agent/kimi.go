@@ -20,7 +20,7 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
 	routing := model.BuildRoutingTable(p)
 	modelName, targetModel := model.FindBestModel("kimi", "", routing)
 	if modelName == "" {
-		modelName = "ccx/gpt-5.5"
+		modelName = "gpt-5.5"
 	}
 
 	content := "# Kimi CLI Configuration - CCX Proxy\n"
@@ -44,9 +44,9 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
 	content += "default = \"" + targetModel + "\"\n\n"
 	content += "[models]\n"
 	content += "\n"
-	content += "[\"models.ccx/gpt-5.5\"]\n"
+	content += "[\"models.gpt-5.5\"]\n"
 	content += "provider = \"ccx\"\n"
-	content += "base_model = \"sensenova-6.7-flash-lite\"\n"
+	content += "base_model = \"" + targetModel + "\"\n"
 	content += "\n"
 	content += "[loop_control]\n"
 	content += "max_steps_per_turn = 1000\n"
@@ -83,3 +83,5 @@ func (w *kimiWriter) Status(path string) (bool, string) {
 	}
 	return false, "未配置代理"
 }
+
+
