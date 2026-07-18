@@ -1,151 +1,436 @@
 package discover
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
 )
 
-// AgentInfo represents a discovered AI coding agent
+const (
+    ProtocolOpenAI = "OpenAI Compatible"
+    ProtocolACP    = "ACP"
+    ProtocolNone   = "N/A"
+)
+
 type AgentInfo struct {
-	Name           string
-	Category       string // "cli" or "ide"
-	HasConfig      bool
-	ConfigPath     string
-	IsConfigured   bool
-	IsConfigurable bool
-	Notes          string
+    Name           string
+    Category       string
+    HasConfig      bool
+    ConfigPath     string
+    IsConfigured   bool
+    IsConfigurable bool
+    Protocol       string
+    Notes          string
 }
 
-// AgentRegistry holds the known agent paths to check
 type AgentRegistry struct {
-	agents []AgentPath
+    agents []AgentPath
 }
 
 type AgentPath struct {
-	Name           string
-	Category       string
-	ConfigFiles    []string // paths relative to %APPDATA%\Roaming
-	HomeDirFiles   []string // paths relative to $HOME (e.g. .codex/)
-	IsConfigurable bool     // has external model provider config field
-	Notes          string
+    Name           string
+    Category       string
+    Protocol       string
+    ConfigFiles    []string
+    HomeDirFiles   []string
+    IsConfigurable bool
+    Notes          string
+}
+
+var protocolMap = map[string]string{
+    "codex":         ProtocolOpenAI,
+    "claude":        ProtocolOpenAI,
+    "kimi":          ProtocolACP,
+    "deepseek":      ProtocolOpenAI,
+    "opencode":      ProtocolOpenAI,
+    "openclaw":      ProtocolOpenAI,
+    "cursor":        ProtocolOpenAI,
+    "codebuddy":     ProtocolOpenAI,
+    "hermes":        ProtocolACP,
+    "kiro":          ProtocolACP,
+    "grok":          ProtocolACP,
+    "qoder":         ProtocolACP,
+    "trae":          ProtocolACP,
+    "antigravity":   ProtocolNone,
+    "copilot":       ProtocolNone,
+    "deveco":        ProtocolNone,
+    "pi":            ProtocolNone,
+    "qoder-ide":     ProtocolNone,
+    "trae-ide":      ProtocolNone,
+    "codebuddy-ide": ProtocolNone,
+    "windsurf":      ProtocolNone,
+    "zed":           ProtocolNone,
+    "lmstudio":      ProtocolOpenAI,
+    "clawx":         ProtocolOpenAI,
 }
 
 var registry = AgentRegistry{
-	agents: []AgentPath{
-		// === 可配置 CLI Agent（通过代理转发） ===
-		{Name: "codex", Category: "cli", ConfigFiles: []string{"Codex/config.toml"}, IsConfigurable: true},
-		{Name: "claude", Category: "cli", ConfigFiles: []string{"Claude/settings.json"}, IsConfigurable: true},
-		{Name: "kimi", Category: "cli", ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi/config.toml"}, IsConfigurable: true},
-		{Name: "deepseek", Category: "cli", HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
-		{Name: "opencode", Category: "cli", ConfigFiles: []string{".config/opencode/opencode.jsonc"}, IsConfigurable: true},
-		{Name: "openclaw", Category: "cli", HomeDirFiles: []string{".openclaw/openclaw.json"}, IsConfigurable: true},
-		{Name: "cursor", Category: "ide", ConfigFiles: []string{"Cursor/User/settings.json"}, IsConfigurable: true},
-		// CodeBuddy CLI（腾讯，Claude Code 兼容）
-		{Name: "codebuddy", Category: "cli", HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
-		// Hermes CLI（Nous Research，ACP 协议）
-		{Name: "hermes", Category: "cli", HomeDirFiles: []string{".hermes/config.yaml"}, IsConfigurable: true},
-		// Kiro CLI（Amazon，ACP 协议）
-		{Name: "kiro", Category: "cli", HomeDirFiles: []string{".kiro/config.yaml"}, IsConfigurable: true},
-		// Grok CLI（xAI，ACP 协议）
-		{Name: "grok", Category: "cli", HomeDirFiles: []string{".grok/config.yaml"}, IsConfigurable: true},
-		// Qoder CLI（阿里，ACP 协议）
-		{Name: "qoder", Category: "cli", HomeDirFiles: []string{".qoder/config.yaml"}, IsConfigurable: true},
-		// Trae CLI（字节跳动，ACP 协议）
-		{Name: "trae", Category: "cli", HomeDirFiles: []string{".traecli/config.yaml"}, IsConfigurable: true},
-
-		// === 不可配置 CLI Agent（无外部模型配置字段） ===
-		// Antigravity（Google，Gemini 后端，无外部配置）
-		{Name: "antigravity", Category: "cli", HomeDirFiles: []string{".agents/config.yaml"}, IsConfigurable: false, Notes: "使用 Google Gemini 服务，无外部模型配置字段"},
-		// Copilot（GitHub，账户权益决定模型）
-		{Name: "copilot", Category: "cli", ConfigFiles: []string{".config/github-copilot/config.yaml"}, IsConfigurable: false, Notes: "模型由 GitHub 账户权益决定，无外部模型配置字段"},
-		// DevEco Code（华为，OpenCode 引擎，自有模型目录）
-		{Name: "deveco", Category: "cli", ConfigFiles: []string{".config/deveco/deveco.jsonc"}, IsConfigurable: false, Notes: "基于 OpenCode 引擎，内置华为账号认证与自有模型目录"},
-		// Pi（Inflection AI，无外部配置）
-		{Name: "pi", Category: "cli", HomeDirFiles: []string{".pi/config.yaml"}, IsConfigurable: false, Notes: "Inflection AI 代理，无外部模型配置字段"},
-
-		// === 不可配置 IDE（自有 AI 后端） ===
-		// Qoder IDE（VS Code 派生，自有 AI 后端）
-		{Name: "qoder-ide", Category: "ide", ConfigFiles: []string{"Qoder/User/settings.json"}, IsConfigurable: false, Notes: "使用自有AI后端，无外部模型配置字段"},
-		// Trae IDE（VS Code 派生，自有 AI 后端）
-		{Name: "trae-ide", Category: "ide", ConfigFiles: []string{"Trae/User/settings.json"}, IsConfigurable: false, Notes: "使用自有AI后端，无外部模型配置字段"},
-		// CodeBuddy IDE（VS Code 派生，自有 AI 后端）
-		{Name: "codebuddy-ide", Category: "ide", ConfigFiles: []string{"CodeBuddy/User/settings.json"}, IsConfigurable: false, Notes: "使用自有AI后端，无外部模型配置字段"},
-		// Windsurf（VS Code 派生，自有 AI 后端）
-		{Name: "windsurf", Category: "ide", ConfigFiles: []string{"Windsurf/User/settings.json"}, IsConfigurable: false, Notes: "使用自有AI后端，无外部模型配置字段"},
-		// Zed（无内置 AI Agent）
-		{Name: "zed", Category: "ide", ConfigFiles: []string{"Zed/settings.json"}, IsConfigurable: false, Notes: "无内置AI Agent，依赖外部工具"},
-
-		// === 其他（暂缺配置写入器） ===
-		{Name: "lmstudio", Category: "cli", ConfigFiles: []string{"LM Studio/settings.json"}, IsConfigurable: true},
-		{Name: "clawx", Category: "ide", HomeDirFiles: []string{"AppData/Roaming/clawx/clawx-providers.json"}, IsConfigurable: true},
-	},
+    agents: []AgentPath{
+        {Name: "codex", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Codex/config.toml"}, IsConfigurable: true},
+        {Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Claude/settings.json"}, IsConfigurable: true},
+        {Name: "kimi", Category: "cli", Protocol: ProtocolACP, ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi/config.toml"}, IsConfigurable: true},
+        {Name: "deepseek", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
+        {Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, IsConfigurable: true},
+        {Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, IsConfigurable: true},
+        {Name: "cursor", Category: "ide", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Cursor/User/settings.json"}, IsConfigurable: true},
+        {Name: "codebuddy", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
+        {Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".hermes/config.yaml"}, IsConfigurable: true},
+        {Name: "kiro", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".kiro/config.yaml"}, IsConfigurable: true},
+        {Name: "grok", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".grok/config.yaml"}, IsConfigurable: true},
+        {Name: "qoder", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".qoder/config.yaml"}, IsConfigurable: true},
+        {Name: "trae", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".traecli/config.yaml"}, IsConfigurable: true},
+        {Name: "antigravity", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".agents/config.yaml"}, IsConfigurable: false, Notes: "Google Gemini, no external model config"},
+        {Name: "copilot", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/github-copilot/config.yaml"}, IsConfigurable: false, Notes: "GitHub account determines model"},
+        {Name: "deveco", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/deveco/deveco.jsonc"}, IsConfigurable: false, Notes: "Huawei OpenCode engine, own model directory"},
+        {Name: "pi", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".pi/config.yaml"}, IsConfigurable: false, Notes: "Inflection AI, no external model config"},
+        {Name: "qoder-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Qoder/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
+        {Name: "trae-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Trae/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
+        {Name: "codebuddy-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"CodeBuddy/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
+        {Name: "windsurf", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Windsurf/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
+        {Name: "zed", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Zed/settings.json"}, IsConfigurable: false, Notes: "No built-in AI Agent"},
+        {Name: "lmstudio", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"LM Studio/settings.json"}, IsConfigurable: true},
+        {Name: "clawx", Category: "ide", Protocol: ProtocolOpenAI, HomeDirFiles: []string{"AppData/Roaming/clawx/clawx-providers.json"}, IsConfigurable: true},
+    },
 }
 
-// Discover scans for all known agents and returns their info
 func Discover() []AgentInfo {
-	home, _ := os.UserHomeDir()
-	roaming := filepath.Join(home, "AppData", "Roaming")
-	results := []AgentInfo{}
+    home, _ := os.UserHomeDir()
+    roaming := filepath.Join(home, "AppData", "Roaming")
+    results := []AgentInfo{}
 
-	for _, ap := range registry.agents {
-		var configPath string
-		var found bool
+    for _, ap := range registry.agents {
+        var configPath string
+        var found bool
 
-		for _, rel := range ap.HomeDirFiles {
-			p := filepath.Join(home, rel)
-			if _, err := os.Stat(p); err == nil {
-				configPath = p
-				found = true
-				break
-			}
-		}
+        for _, rel := range ap.HomeDirFiles {
+            p := filepath.Join(home, rel)
+            if _, err := os.Stat(p); err == nil {
+                if strings.HasSuffix(ap.Name, "-ide") {
+                    continue
+                }
+                configPath = p
+                found = true
+                break
+            }
+        }
 
-		if !found {
-			for _, rel := range ap.ConfigFiles {
-				p := filepath.Join(roaming, rel)
-				if _, err := os.Stat(p); err == nil {
-					// Skip IDE variants that already have CLI versions found
-					if strings.HasSuffix(ap.Name, "-ide") {
-						continue
-					}
-					configPath = p
-					found = true
-					break
-				}
-			}
-		}
+        if !found {
+            for _, rel := range ap.ConfigFiles {
+                p := filepath.Join(roaming, rel)
+                if _, err := os.Stat(p); err == nil {
+                    if strings.HasSuffix(ap.Name, "-ide") {
+                        continue
+                    }
+                    configPath = p
+                    found = true
+                    break
+                }
+            }
+        }
 
-		info := AgentInfo{
-			Name:           ap.Name,
-			Category:       ap.Category,
-			HasConfig:      found,
-			ConfigPath:     configPath,
-			IsConfigurable: ap.IsConfigurable,
-			Notes:          ap.Notes,
-		}
+        info := AgentInfo{
+            Name:           ap.Name,
+            Category:       ap.Category,
+            HasConfig:      found,
+            ConfigPath:     configPath,
+            IsConfigurable: ap.IsConfigurable,
+            Protocol:       protocolMap[ap.Name],
+            Notes:          ap.Notes,
+        }
 
-		if found && ap.IsConfigurable {
-			info.IsConfigured = checkConfigured(configPath)
-		}
+        if found && ap.IsConfigurable {
+            info.IsConfigured = checkConfigured(configPath)
+        }
 
-		results = append(results, info)
-	}
+        results = append(results, info)
+    }
 
-	return results
+    return results
 }
 
 func checkConfigured(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	content := strings.ToLower(string(data))
-	return strings.Contains(content, "127.0.0.1") &&
-		(strings.Contains(content, "3688") || strings.Contains(content, "sensenova"))
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return false
+    }
+    content := strings.ToLower(string(data))
+    return strings.Contains(content, "127.0.0.1") ||
+        strings.Contains(content, "sensenova") ||
+        strings.Contains(content, "platform.sensenova") ||
+        strings.Contains(content, "api.deepseek") ||
+        strings.Contains(content, "api.siliconflow") ||
+        strings.Contains(content, "localhost:11434")
 }
 
-// GetRegistry returns the known agent registry
 func GetRegistry() []AgentPath {
-	return registry.agents
+    return registry.agents
+}
+
+func RenderTable(agents []AgentInfo) {
+    if len(agents) == 0 {
+        fmt.Println("No AI agents found.")
+        return
+    }
+
+    fmt.Printf("\nDiscovered %d AI agents:\n\n", len(agents))
+
+    colName     := "Agent"
+    colCat      := "Type"
+    colProtocol := "Protocol"
+    colStatus   := "Status"
+    colConfig   := "Configured"
+
+    widthName     := maxStrWidth(append(append([]string{colName}, agentNames(agents)...), ""))
+    widthCat      := maxStrWidth(append([]string{colCat}, agentCats(agents)...))
+    widthProtocol := maxStrWidth(append([]string{colProtocol}, agentProtocols(agents)...))
+    widthStatus   := maxStrWidth(append([]string{colStatus}, agentStatuses(agents)...))
+    widthConfig   := maxStrWidth(append([]string{colConfig}, agentConfigStatuses(agents)...))
+
+    fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+        widthName, colName,
+        widthCat, colCat,
+        widthProtocol, colProtocol,
+        widthStatus, colStatus,
+        widthConfig, colConfig,
+        "Config Path")
+
+    fmt.Printf("  %s  %s  %s  %s  %s  %s\n",
+        strings.Repeat("-", widthName),
+        strings.Repeat("-", widthCat),
+        strings.Repeat("-", widthProtocol),
+        strings.Repeat("-", widthStatus),
+        strings.Repeat("-", widthConfig),
+        "")
+
+    for _, a := range agents {
+        installed := "Installed"
+        if !a.HasConfig {
+            installed = "Not installed"
+        }
+        configured := "Yes"
+        if !a.IsConfigured {
+            configured = "No"
+        }
+        if !a.IsConfigurable {
+            configured = "-"
+        }
+        pathDisplay := a.ConfigPath
+        if !a.HasConfig {
+            pathDisplay = "-"
+        }
+
+        fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+            widthName, a.Name,
+            widthCat, a.Category,
+            widthProtocol, a.Protocol,
+            widthStatus, installed,
+            widthConfig, configured,
+            pathDisplay)
+    }
+    fmt.Println()
+}
+
+func RenderVerboseTable(agents []AgentInfo) {
+    colAgent   := "Agent"
+    colCat     := "Type"
+    colProtocol := "Protocol"
+    colStatus   := "Status"
+    colConfig   := "Configured"
+    colDefault  := "Default Model"
+    colRouted   := "Routed To"
+    colCustom   := "Custom Model"
+
+    widthAgent  := maxStrWidth(append([]string{colAgent}, agentNames(agents)...))
+    widthCat    := maxStrWidth([]string{colCat, "cli", "ide"})
+    widthProto  := maxStrWidth(append([]string{colProtocol}, agentProtocols(agents)...))
+    widthStatus := maxStrWidth(append([]string{colStatus}, agentVerboseStatuses(agents)...))
+    widthConfig := maxStrWidth([]string{colConfig, "Yes", "No", "-"})
+    widthDef    := maxStrWidth(append([]string{colDefault}, agentDefaultModels(agents)...))
+    widthRouted := maxStrWidth(append([]string{colRouted}, agentRoutedModels(agents)...))
+    widthCustom := maxStrWidth(append([]string{colCustom}, agentCustomSupport(agents)...))
+
+    fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s\n",
+        widthAgent, colAgent,
+        widthCat, colCat,
+        widthProto, colProtocol,
+        widthStatus, colStatus,
+        widthConfig, colConfig,
+        widthDef, colDefault,
+        widthRouted, colRouted,
+        widthCustom, colCustom)
+
+    fmt.Printf("  %s  %s  %s  %s  %s  %s  %s  %s\n",
+        strings.Repeat("-", widthAgent),
+        strings.Repeat("-", widthCat),
+        strings.Repeat("-", widthProto),
+        strings.Repeat("-", widthStatus),
+        strings.Repeat("-", widthConfig),
+        strings.Repeat("-", widthDef),
+        strings.Repeat("-", widthRouted),
+        strings.Repeat("-", widthCustom))
+
+    for _, a := range agents {
+        installed := "Installed"
+        if !a.HasConfig {
+            installed = "Not installed"
+        }
+        configured := "Yes"
+        if !a.IsConfigured {
+            configured = "No"
+        }
+        if !a.IsConfigurable {
+            configured = "-"
+        }
+        custom := "Yes"
+        if !a.IsConfigurable {
+            custom = "-"
+        }
+        fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s\n",
+            widthAgent, a.Name,
+            widthCat, a.Category,
+            widthProto, a.Protocol,
+            widthStatus, installed,
+            widthConfig, configured,
+            widthDef, agentDefaultModel(a.Name),
+            widthRouted, agentDefaultModel(a.Name),
+            widthCustom, custom)
+    }
+    fmt.Println()
+}
+
+func agentNames(agents []AgentInfo) []string {
+    names := make([]string, len(agents))
+    for i, a := range agents {
+        names[i] = a.Name
+    }
+    return names
+}
+
+func agentCats(agents []AgentInfo) []string {
+    cats := make([]string, len(agents))
+    for i, a := range agents {
+        cats[i] = a.Category
+    }
+    return cats
+}
+
+func agentProtocols(agents []AgentInfo) []string {
+    protos := make([]string, len(agents))
+    for i, a := range agents {
+        protos[i] = a.Protocol
+    }
+    return protos
+}
+
+func agentStatuses(agents []AgentInfo) []string {
+    statuses := make([]string, 0, len(agents))
+    for _, a := range agents {
+        statuses = append(statuses, agentStatus(a))
+    }
+    return statuses
+}
+
+func agentStatus(a AgentInfo) string {
+    if !a.HasConfig {
+        return "Not installed"
+    }
+    return "Installed"
+}
+
+func agentConfigStatuses(agents []AgentInfo) []string {
+    statuses := make([]string, 0, len(agents))
+    for _, a := range agents {
+        statuses = append(statuses, agentConfigStatus(a))
+    }
+    return statuses
+}
+
+func agentConfigStatus(a AgentInfo) string {
+    if !a.IsConfigurable {
+        return "-"
+    }
+    if a.IsConfigured {
+        return "Yes"
+    }
+    return "No"
+}
+
+func agentVerboseStatuses(agents []AgentInfo) []string {
+    statuses := make([]string, 0, len(agents))
+    for _, a := range agents {
+        statuses = append(statuses, agentStatus(a))
+    }
+    return statuses
+}
+
+func agentDefaultModels(agents []AgentInfo) []string {
+    models := make([]string, len(agents))
+    for i, a := range agents {
+        models[i] = agentDefaultModel(a.Name)
+    }
+    return models
+}
+
+func agentRoutedModels(agents []AgentInfo) []string {
+    models := make([]string, len(agents))
+    for i, a := range agents {
+        models[i] = agentDefaultModel(a.Name)
+    }
+    return models
+}
+
+func agentCustomSupport(agents []AgentInfo) []string {
+    support := make([]string, len(agents))
+    for i, a := range agents {
+        support[i] = agentCustomIcon(a)
+    }
+    return support
+}
+
+func agentCustomIcon(a AgentInfo) string {
+    if a.IsConfigurable {
+        return "Yes"
+    }
+    return "-"
+}
+
+func agentDefaultModel(name string) string {
+    m := map[string]string{
+        "codex":     "gpt-5.5",
+        "claude":    "fable",
+        "kimi":      "gpt-5.5",
+        "deepseek":  "sensenova-6.7-flash-lite",
+        "opencode":  "myccx/glm-5.2",
+        "cursor":    "sensenova-6.7-flash-lite",
+        "openclaw":  "sensenova-6.7-flash-lite",
+        "codebuddy": "fable",
+        "hermes":    "sensenova-6.7-flash-lite",
+        "kiro":      "sensenova-6.7-flash-lite",
+        "grok":      "sensenova-6.7-flash-lite",
+        "qoder":     "sensenova-6.7-flash-lite",
+        "trae":      "sensenova-6.7-flash-lite",
+    }
+    if v, ok := m[name]; ok {
+        return v
+    }
+    return "N/A"
+}
+
+func maxStrWidth(strs []string) int {
+    maxW := 0
+    for _, s := range strs {
+        w := 0
+        for _, r := range s {
+            if r > 0x2E7F && (r <= 0x9FFF || r >= 0xF900 && r <= 0xFAFF || r >= 0x3400 && r <= 0x4DBF || r >= 0x20000 && r <= 0x2A6DF) {
+                w += 2
+            } else {
+                w++
+            }
+        }
+        if w > maxW {
+            maxW = w
+        }
+    }
+    return maxW
 }

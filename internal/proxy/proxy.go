@@ -10,12 +10,22 @@ import (
 	"strings"
 )
 
+// ProxyType identifies the source/type of the proxy
+type ProxyType string
+
+const (
+	ProxyTypeCCX    ProxyType = "ccx/Desktop"
+	ProxyTypeLocal  ProxyType = "local"
+	ProxyTypeCloud  ProxyType = "cloud"
+	ProxyTypeManual ProxyType = "manual"
+)
+
 // Proxy represents a CCX Desktop / CCX-Switch style protocol proxy
 type Proxy struct {
 	BaseURL  string            `json:"base_url"`
 	APIKey   string            `json:"api_key"`
 	Port     int               `json:"port"`
-	Source   string            `json:"source"`
+	Source   ProxyType         `json:"source"`
 	ModelMap map[string]string `json:"model_map"`
 }
 
@@ -27,38 +37,53 @@ func FromFlags(cliURL, cliKey string) (*Proxy, error) {
 		return nil, nil
 	}
 
-	if cliKey == "" {
+	if cliURL != "" && cliKey == "" {
 		return nil, fmt.Errorf("--key is required when --url is specified")
 	}
 
 	baseURL := cliURL
 	port := 0
-	if u, err := url.Parse(cliURL); err == nil {
-		if u.Host != "" {
-			host := u.Host
-			if idx := strings.LastIndex(host, ":"); idx != -1 {
-				if p, err := strconv.Atoi(host[idx+1:]); err == nil {
-					port = p
+	// Try parsed URL host first
+	u, err := url.Parse(cliURL)
+	if err == nil && u.Host != "" {
+		if p, err := strconv.Atoi(u.Port()); err == nil {
+			port = p
+		}
+	}
+	if port == 0 {
+		if idx := strings.LastIndex(cliURL, ":"); idx != -1 {
+			// Fallback for bare host:port or unparsable strings.
+			// Only take the numeric portion (port may be followed by path like "/v1").
+			portStr := cliURL[idx+1:]
+			if n, _ := strconv.Atoi(portStr); n != 0 {
+				port = n
+			} else {
+				// portStr is like "9000/v1" - strip non-numeric suffix
+				for i, c := range portStr {
+					if c < '0' || c > '9' {
+						if num, err := strconv.Atoi(portStr[:i]); err == nil {
+							port = num
+						}
+						break
+					}
 				}
 			}
 		}
-	} else {
-		if idx := strings.LastIndex(cliURL, ":"); idx != -1 {
-			if p, err := strconv.Atoi(cliURL[idx+1:]); err == nil {
-				port = p
-			}
-		}
 	}
-
+	// Default port based on scheme when not explicitly provided
 	if port == 0 {
-		port = 80
+		if u, err := url.Parse(cliURL); err == nil && u.Scheme == "https" {
+			port = 443
+		} else {
+			port = 80
+		}
 	}
 
 	return &Proxy{
 		BaseURL: baseURL,
 		APIKey:  cliKey,
 		Port:    port,
-		Source:  "manual",
+		Source:  ProxyTypeManual,
 		ModelMap: map[string]string{},
 	}, nil
 }
@@ -113,7 +138,7 @@ func Detect() (*Proxy, error) {
 		BaseURL: "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
 		APIKey:  "ccx-dff3eccc518d9830",
 		Port:    port,
-		Source:  "ccx-desktop",
+		Source:  ProxyTypeCCX,
 		ModelMap: modelMap,
 	}, nil
 }
@@ -127,3 +152,5 @@ func parsePort(s string) int {
 	}
 	return n
 }
+
+

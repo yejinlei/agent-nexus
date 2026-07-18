@@ -66,5 +66,8 @@ func LatestBackupDir(destRoot string) string {
 			latest = e.Name()
 		}
 	}
+	if latest == "" {
+		return ""
+	}
 	return filepath.Join(destRoot, "backups", latest)
 }

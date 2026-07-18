@@ -2,6 +2,7 @@ package agent
 
 import (
     "os"
+    "regexp"
     "strings"
     "agent-nexus/internal/proxy"
 )
@@ -22,9 +23,25 @@ func (w *codexWriter) Configure(path string, p *proxy.Proxy) error {
     content := string(data)
 
     // Replace or add openai_base_url
-    content = applyPattern(content, "openai_base_url\\s*=\\s*\".*\"", "openai_base_url = \""+p.BaseURL+"\"")
-    content = applyPattern(content, "model_provider\\s*=\\s*\".*\"", "model_provider = \"openai\"")
-    content = applyPattern(content, "model\\s*=\\s*\".*\"", "model = \"gpt-5.5\"")
+    if hasPattern(content, "openai_base_url\\s*=\\s*\".*\"") {
+        content = applyPattern(content, "openai_base_url\\s*=\\s*\".*\"", "openai_base_url = \"" + p.BaseURL + "\"")
+    } else {
+        content += "\nopenai_base_url = \"" + p.BaseURL + "\"\n"
+    }
+
+    // Replace or add model_provider
+    if hasPattern(content, "model_provider\\s*=\\s*\".*\"") {
+        content = applyPattern(content, "model_provider\\s*=\\s*\".*\"", "model_provider = \"openai\"")
+    } else {
+        content += "\nmodel_provider = \"openai\"\n"
+    }
+
+    // Replace or add model
+    if hasPattern(content, "model\\s*=\\s*\".*\"") {
+        content = applyPattern(content, "model\\s*=\\s*\".*\"", "model = \"gpt-5.5\"")
+    } else {
+        content += "\nmodel = \"gpt-5.5\"\n"
+    }
 
     // Add ccswitch provider block if missing
     if !strings.Contains(content, "[model_providers.ccswitch]") {
@@ -37,6 +54,11 @@ func (w *codexWriter) Configure(path string, p *proxy.Proxy) error {
     }
 
     return os.WriteFile(path, []byte(content), 0644)
+}
+
+func hasPattern(content, pattern string) bool {
+    re := regexp.MustCompile(pattern)
+    return re.MatchString(content)
 }
 
 func (w *codexWriter) Status(path string) (bool, string) {
@@ -53,9 +75,10 @@ func (w *codexWriter) Status(path string) (bool, string) {
 }
 
 func applyPattern(content, pattern, replacement string) string {
+    re := regexp.MustCompile(pattern)
     lines := strings.Split(content, "\n")
     for i, line := range lines {
-        if strings.Contains(line, pattern) {
+        if re.MatchString(line) {
             lines[i] = replacement
         }
     }

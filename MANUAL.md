@@ -96,6 +96,35 @@ CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接
 
 读取 CCX Desktop 配置并输出代理地址、Key 和模型映射表。
 
+### sniff — 嗅探 LLM 提供商消息格式与模型
+
+嗅探指定的 LLM provider endpoint，自动检测其支持的消息格式（如 OpenAI 兼容协议等）和可用模型列表。
+
+```powershell
+.\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
+```
+
+该命令会依次探测：
+- `/v1/models` 获取可用模型列表
+- `/v1/chat/completions` 验证消息格式兼容性
+
+输出示例：
+
+```
+正在嗅探 LLM endpoint: https://token.sensenova.cn/v1
+
+  Endpoint: https://token.sensenova.cn/v1
+  消息格式: OpenAI Compatible (models endpoint) + chat completions
+  OpenAI 兼容: true
+
+  可用模型 (5):
+    - sensenova-6.7-flash-lite
+    - sensenova-u1-fast
+    - deepseek-v4-flash
+    - glm-5.2
+    - deepseek-r1
+```
+
 ## 工作流程
 
 ```
@@ -152,6 +181,11 @@ copy .\agent-configs-2026-07-17_14-30-00\config.toml ~/.codex\config.toml
 ### 场景 4：只备份（不配置）
 ```powershell
 .\agent-nexus.exe backup
+```
+
+### 场景 5：嗅探新 LLM 提供商
+```powershell
+.\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
 ```
 
 ## 彩色输出含义

@@ -7,3 +7,16 @@ vendor/
 *.out
 
 
+
+# Go cache / build cache directories
+.cache/
+.go-build-cache/
+.gocache/
+.gomodcache/
+.gomodcache_build/
+.gopath/
+
+# Temp description file from previous run
+description.md
+.go-cache/
+.gomodcache2/

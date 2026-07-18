@@ -14,6 +14,7 @@ import (
     "agent-nexus/internal/discover"
     "agent-nexus/internal/model"
     "agent-nexus/internal/proxy"
+    "agent-nexus/internal/sniff"
     "agent-nexus/internal/versioning"
 )
 
@@ -31,6 +32,7 @@ var rootCmd = &cobra.Command{
   4. 将 AI 代理配置写入各 agent 配置文件
   5. 自动模型重定向，匹配最佳后端模型
   6. 配置文件版本管理：快照、回滚、分支、差异对比
+  7. 嗅探 LLM 提供商消息格式与模型列表
 
 支持的 agent:
   CLI:  codex, claude, kimi, deepseek, opencode, openclaw,
@@ -40,17 +42,18 @@ var rootCmd = &cobra.Command{
             codebuddy-ide, windsurf, zed
 
 用法：
-  agent-nexus discover   扫描并列出已安装的 agent
-  agent-nexus detect     检测 AI 代理配置
-  agent-nexus backup     备份所有配置（自动版本化）
-  agent-nexus configure  备份后自动配置指定的 agent（必选 --agents 参数）
-  agent-nexus status     显示配置状态
-  agent-nexus route      显示模型路由表
-  agent-nexus snapshot   创建配置快照
-  agent-nexus restore    恢复到指定快照
-  agent-nexus version    列出所有配置快照
-  agent-nexus diff       对比两个快照的差异
-  agent-nexus branch     管理配置分支
+  agent-nexus discover [-v]   扫描已安装的 agent（-v 显示支持模型）
+  agent-nexus detect         检测 AI 代理配置
+  agent-nexus backup         备份所有配置（自动版本化）
+  agent-nexus configure      备份后自动配置指定的 agent（必选 --agents 参数）
+  agent-nexus status         显示配置状态
+  agent-nexus route          显示模型路由表
+  agent-nexus snapshot       创建配置快照
+  agent-nexus restore        恢复到指定快照
+  agent-nexus version        列出所有配置快照
+  agent-nexus diff           对比两个快照的差异
+  agent-nexus branch         管理配置分支
+  agent-nexus sniff          嗅探 LLM 提供商消息格式与模型
 `,
 }
 
@@ -82,33 +85,45 @@ func getProxySettings() (*proxy.Proxy, error) {
 }
 
 // discoverCmd scans for installed agents
+var (
+    discoverVerbose bool
+)
+
 var discoverCmd = &cobra.Command{
     Use:   "discover",
     Short: "扫描并列出已安装的 AI agent",
     RunE: func(cmd *cobra.Command, args []string) error {
         agents := discover.Discover()
-        fmt.Printf("\n已发现 %d 个 AI agent:\n", len(agents))
-        fmt.Println(strings.Repeat("-", 80))
 
-        for _, a := range agents {
-            statusIcon := "❌"
-            if a.HasConfig {
-                statusIcon = "✅"
+        // Default mode: summary table
+        discover.RenderTable(agents)
+
+        // Verbose mode: full detail table with model routing
+        if discoverVerbose {
+            fmt.Printf("正在检测 AI 代理以获取模型信息...")
+            p, err := getProxySettings()
+            if err != nil {
+                fmt.Printf("  未检测到 AI 代理配置（将仅显示默认模型）`n")
+            } else {
+                fmt.Printf("  代理: %s (%s)`n", p.Source, p.BaseURL)
             }
-            notes := ""
-            if !a.IsConfigurable && a.Notes != "" {
-                notes = fmt.Sprintf("            └─ ⚠ %s\n", a.Notes)
+
+            fmt.Printf("`n模型支持详情:`n")
+            discover.RenderVerboseTable(agents)
+
+            // Build and display the routing table
+            routing := model.BuildRoutingTable(p)
+            fmt.Println("模型路由表:")
+            fmt.Println(strings.Repeat("-", 70))
+            for _, r := range routing {
+                fmt.Printf("  %-10s %-28s → %-28s [%s]`n", r.Agent, r.Model, r.Target, r.Source)
             }
-            if a.HasConfig && a.IsConfigured {
-                notes = "            └─ 🔗 已配置代理\n"
-            }
-            fmt.Printf("  %-12s %-5s [%s] %s\n%s", a.Name, a.Category, statusIcon, a.ConfigPath, notes)
+            fmt.Println()
         }
-        fmt.Println()
+
         return nil
     },
 }
-
 // detectCmd auto-detects AI proxy settings
 var detectCmd = &cobra.Command{
     Use:   "detect",
@@ -806,6 +821,74 @@ var routeCmd = &cobra.Command{
     },
 }
 
+// sniffCmd sniffs an LLM provider endpoint to detect supported message formats and models.
+var (
+    sniffURL string
+    sniffKey string
+)
+
+var sniffCmd = &cobra.Command{
+    Use:   "sniff",
+    Short: "嗅探 LLM 提供商的消息格式和可用模型",
+    Long: `嗅探指定的 LLM 提供商 endpoint，自动检测其支持的消息格式（OpenAI 兼容协议、Anthropic Messages API 等）
+和可用模型列表。
+
+使用方式:
+  .\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
+  .\agent-nexus.exe sniff --url http://127.0.0.1:8080/v1 --key sk-xxx
+
+该命令会依次探测:
+  1. /v1/models           获取模型列表
+  2. /v1/chat/completions  验证 OpenAI 格式兼容性
+  3. /v1/messages          验证 Anthropic Messages API 兼容性
+`,
+    RunE: func(cmd *cobra.Command, args []string) error {
+        if sniffURL == "" || sniffKey == "" {
+            return fmt.Errorf("--url 和 --key 均为必选参数")
+        }
+
+        fmt.Printf("正在嗅探 LLM endpoint: %s\n\n", sniffURL)
+
+        result, err := sniff.Sniff(sniffURL, sniffKey)
+        if err != nil {
+            fmt.Printf("嗅探失败: %v\n", err)
+            return err
+        }
+
+        fmt.Printf("  Endpoint: %s\n", result.BaseURL)
+
+        // Build a multi-format summary line
+        var formats []string
+        if result.ModelCount > 0 {
+            formats = append(formats, "OpenAI models API")
+        }
+        if result.OpenAICap {
+            formats = append(formats, "OpenAI chat completions")
+        }
+        if result.AnthropicCap {
+            formats = append(formats, "Anthropic Messages API")
+        }
+        if len(formats) > 0 {
+            fmt.Printf("  支持格式: %s\n", strings.Join(formats, " / "))
+        } else {
+            fmt.Printf("  支持格式: 未检测到标准格式\n")
+        }
+
+        if result.ModelCount > 0 {
+            fmt.Printf("\n  可用模型 (%d):\n", result.ModelCount)
+            for _, m := range result.Models {
+                fmt.Printf("    - %s\n", m)
+            }
+        }
+
+        if result.Notes != "" {
+            fmt.Printf("\n  备注: %s\n", result.Notes)
+        }
+
+        fmt.Println()
+        return nil
+    },
+}
 func init() {
     // backup flags
     backupCmd.Flags().StringVar(&backupBranch, "branch", "main", "快照所属分支名称")
@@ -829,10 +912,19 @@ func init() {
     diffCmd.MarkFlagRequired("old")
     diffCmd.MarkFlagRequired("new")
 
+    // discover flags
+    discoverCmd.Flags().BoolVarP(&discoverVerbose, "verbose", "v", false, "显示 agent 支持的所有模型及模型来源（自定义 vs. 模型重定义）")
+
     // branch flags
     branchCmd.Flags().StringVar(&branchCreateName, "create", "", "创建新分支名称")
     branchCmd.Flags().StringVar(&branchSwitchName, "switch", "", "切换到指定分支")
     branchCmd.Flags().BoolVar(&branchShow, "show", false, "显示当前分支信息")
+
+    // sniff flags
+    sniffCmd.Flags().StringVar(&sniffURL, "url", "", "LLM provider endpoint URL（必选）")
+    sniffCmd.Flags().StringVar(&sniffKey, "key", "", "LLM provider API key（必选）")
+    sniffCmd.MarkFlagRequired("url")
+    sniffCmd.MarkFlagRequired("key")
 
     rootCmd.AddCommand(discoverCmd)
     rootCmd.AddCommand(detectCmd)
@@ -845,6 +937,7 @@ func init() {
     rootCmd.AddCommand(versionCmd)
     rootCmd.AddCommand(diffCmd)
     rootCmd.AddCommand(branchCmd)
+    rootCmd.AddCommand(sniffCmd)
 }
 
 // Execute runs the root command
@@ -853,4 +946,3 @@ func Execute() {
         os.Exit(1)
     }
 }
-
