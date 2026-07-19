@@ -1,11 +1,11 @@
 # agent-nexus — AI Agent 配置自动化工具
 
-一键自动发现、备份、配置本机所有 AI coding agent（codex / claude / kimi / deepseek / opencode / cursor 等），将它们统一接入 CCX Desktop 代理。
+一键自动发现、备份、配置本机所有 AI coding agent（codex / claude / kimi / deepseek / opencode / cursor 等），将它们统一接入任意 LLM 代理（CCX Desktop 或其他自定义代理）。
 
 ## 功能
 
 - **自动发现**：扫描本机已安装的 AI agent（CLI 工具 + IDE）
-- **代理检测**：自动读取 CCX Desktop 配置（URL、Key、模型映射表）
+- **代理检测**：自动读取 CCX Desktop 配置（URL、Key、模型映射表），也支持任意自定义代理
 - **配置写入**：支持 `--url` / `--key` 全局选项，也可直接输入 URL 和 Key
 - **自动备份**：配置生效前自动创建版本化快照
 - **一键配置**：`agent-nexus configure --agents all` 完成完整流程
@@ -47,6 +47,48 @@
 | codebuddy-ide | IDE | VS Code 派生，自有 AI 后端 |
 | windsurf | IDE | VS Code 派生，自有 AI 后端 |
 | zed | IDE | 无内置 AI Agent，依赖外部工具 |
+
+## 代理支持
+
+agent-nexus 支持两种代理接入方式：
+
+### CCX Desktop（自动检测）
+
+```powershell
+agent-nexus configure --agents all
+```
+
+自动读取 CCX Desktop 的配置文件（`~\AppData\Roaming\ccx-desktop\.config\config.json`）和 `.env` 文件，获取代理地址、Key 和模型映射表。CCX Desktop 需保持运行（默认监听 `127.0.0.1:3688`）。
+
+### CC-Switch（自动检测）
+
+```powershell
+agent-nexus configure --agents all
+```
+
+自动读取 CC-Switch 的配置文件（`~\AppData\Roaming\cc-switch\.config\config.json`）和 `.env` 文件，获取代理地址、Key 和模型映射表。CC-Switch 需保持运行（默认监听 `127.0.0.1:3688`）。检测顺序：CCX Desktop → CC-Switch → 回退。
+
+### 自定义代理（手动指定）
+
+```powershell
+agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
+agent-nexus detect --url https://proxy.example.com/v1 --key abc123
+agent-nexus route --url http://my-local-proxy:9000/v1 --key mykey
+agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
+```
+
+`--url` 和 `--key` 是全局选项，可覆盖自动检测，支持任意代理地址和密钥。`sniff` 命令还可自动检测自定义 LLM endpoint 的消息格式和可用模型列表。
+
+### 代理类型
+
+| 代理类型 | 说明 |
+|---------|------|
+| CCX Desktop | 自动检测 CCX Desktop 配置（`~\AppData\Roaming\ccx-desktop`） |
+| CC-Switch | 自动检测 CC-Switch 配置（`~\AppData\Roaming\cc-switch`） |
+| 自定义代理 | 通过 `--url` + `--key` 手动指定任意代理地址 |
+| 本地代理 | 通过 `--url` 指定本地运行的代理（如 `http://127.0.0.1:8080/v1`） |
+
+> ⚠️ **每次配置仅支持一个代理**。agent-nexus 不支持同时配置多个代理，所有 agent 共享同一个代理地址。
 
 ## 安装
 
@@ -178,8 +220,8 @@ graph TD
 sequenceDiagram
     participant User
     participant Tool as agent-nexus
-    participant Proxy as CCX Desktop 代理
-    participant Backend as sensenova 后端
+    participant Proxy as LLM 代理<br/>(CCX Desktop 或自定义)
+    participant Backend as 后端模型
     participant FS as 文件系统/备份
 
     User->>Tool: agent-nexus configure --agents all
@@ -239,7 +281,7 @@ agent-nexus/
     │   ├── model.go                 # 模型路由表构建
     │   └── model_test.go
     ├── proxy/
-    │   ├── proxy.go                 # CCX Desktop 代理检测
+    │   ├── proxy.go                 # 代理检测（CCX Desktop / 自定义）
     │   └── proxy_test.go
     ├── sniff/
     │   └── sniff.go                 # LLM endpoint 嗅探（消息格式 + 模型列表）
@@ -275,9 +317,10 @@ writers: []ConfigWriter{
 
 ## 注意事项
 
-- CCX Desktop 需保持运行（监听 `127.0.0.1:3688`）
+- CCX Desktop 需保持运行（监听 `127.0.0.1:3688`），或使用 `--url` 指定自定义代理
 - Cursor 的字段名取决于版本，不匹配时需通过 Cursor 设置 UI 手动填入
 - `configure` 命令 **必须** 指定 `--agents` 参数（`all` 或逗号分隔的 agent 名称）
+- **每次配置仅支持一个代理**，所有 agent 共享同一个代理地址
 - 配置快照存储于 `~/.codex/backups/`，使用 `agent-nexus version` 查看所有快照
 - 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
 - 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚

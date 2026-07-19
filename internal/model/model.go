@@ -27,6 +27,7 @@ type ModelDetail struct {
 }
 
 // BuildRoutingTable returns model routing info based on detected proxy settings
+// Supports both CCX Desktop (ccx/Desktop) and CC-Switch (ccx/Switch) proxies
 func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 	routing := []ModelMapping{
 		{"codex", "gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
@@ -35,6 +36,13 @@ func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 		{"deepseek", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
 		{"opencode", "myccx/glm-5.2", "glm-5.2", "CCX"},
 		{"cursor", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"openclaw", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"codebuddy", "fable", "glm-5.2", "CCX"},
+		{"hermes", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"kiro", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"grok", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"qoder", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+		{"trae", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
 	}
 
 	if p != nil && p.ModelMap != nil {
