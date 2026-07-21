@@ -69,7 +69,7 @@ var registry = []Agent{
 		Display:   "OpenCode",
 		Category:  "cli",
 		NpmPackage: "",
-		UninstallPaths: []string{".opencode"},
+		UninstallPaths: []string{".config/opencode"},
 		Download:  map[string]string{
 			PlatformWindows: "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-darwin-arm64",
@@ -83,6 +83,7 @@ var registry = []Agent{
 		Display:   "OpenClaw",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".openclaw"},
 		Download:  map[string]string{
 			PlatformWindows: "https://github.com/openclaw/openclaw/releases/latest/download/openclaw-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/openclaw/openclaw/releases/latest/download/openclaw-darwin-arm64",
@@ -125,6 +126,7 @@ var registry = []Agent{
 		Display:   "Trae CLI",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".traecli"},
 		Download:  map[string]string{
 			PlatformWindows: "https://github.com/trae-ai/trae/releases/latest/download/trae.exe",
 			PlatformDarwin:  "https://github.com/trae-ai/trae/releases/latest/download/trae",
@@ -138,6 +140,7 @@ var registry = []Agent{
 		Display:   "CodeBuddy",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".codebuddy"},
 		Download:  map[string]string{
 			PlatformWindows: "https://codebuddy.com/download",
 			PlatformDarwin:  "https://codebuddy.com/download",
@@ -151,6 +154,7 @@ var registry = []Agent{
 		Display:   "GitHub Copilot CLI",
 		Category:  "cli",
 		NpmPackage: "github/copilot-cli",
+		UninstallPaths: []string{".config/github-copilot"},
 		Download:  map[string]string{},
 		Protocol:  "none",
 		Notes:     "GitHub Copilot — npm package name placeholder; GitHub account controls provider",
@@ -160,6 +164,7 @@ var registry = []Agent{
 		Display:   "Deveco Studio / CLI",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".config/deveco"},
 		Download:  map[string]string{
 			PlatformWindows: "https://developer.huawei.com/consumer/cn/deveco-studio",
 			PlatformDarwin:  "https://developer.huawei.com/consumer/cn/deveco-studio",
@@ -173,6 +178,7 @@ var registry = []Agent{
 		Display:   "Pi CLI",
 		Category:  "cli",
 		NpmPackage: "@inflectionai/pi-cli",
+		UninstallPaths: []string{".pi"},
 		Download:  map[string]string{},
 		Protocol:  "none",
 		Notes:     "Inflection Pi CLI — npm package placeholder; no external model config",
@@ -182,6 +188,7 @@ var registry = []Agent{
 		Display:   "Kiro CLI",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".kiro"},
 		Download:  map[string]string{
 			PlatformWindows: "https://kiro.com/download",
 			PlatformDarwin:  "https://kiro.com/download",
@@ -195,6 +202,7 @@ var registry = []Agent{
 		Display:   "Qoder CLI",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".qoder"},
 		Download:  map[string]string{
 			PlatformWindows: "https://qoder.com/download",
 			PlatformDarwin:  "https://qoder.com/download",
@@ -208,6 +216,7 @@ var registry = []Agent{
 		Display:   "Grok",
 		Category:  "cli",
 		NpmPackage: "",
+		UninstallPaths: []string{".grok"},
 		Download:  map[string]string{
 			PlatformWindows: "https://github.com/grok/grok/releases/latest/download/grok-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/grok/grok/releases/latest/download/grok-darwin-arm64",
