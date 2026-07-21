@@ -87,7 +87,7 @@ var registry = AgentRegistry{
         {Name: "trae", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".traecli/config.yaml"}, IsConfigurable: true},
         {Name: "antigravity", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".agents/config.yaml"}, IsConfigurable: false, Notes: "Google Gemini, no external model config"},
         {Name: "copilot", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/github-copilot/config.yaml"}, IsConfigurable: false, Notes: "GitHub account determines model"},
-		{Name: "pi", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".pi/config.yaml", ".config/pi/config.yaml"}, BinaryName: "pi", IsConfigurable: false, Notes: "Inflection Pi CLI (npm: @earendil-works/pi-coding-agent)"},
+		{Name: "pi", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".pi/agent/settings.json"}, BinaryName: "pi", IsConfigurable: true, Notes: "Inflection Pi CLI (npm: @earendil-works/pi-coding-agent)"},
         {Name: "deveco", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/deveco/deveco.jsonc"}, IsConfigurable: false, Notes: "Huawei OpenCode engine, own model directory"},
         {Name: "qoder-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Qoder/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
         {Name: "trae-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Trae/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
@@ -450,4 +450,5 @@ func maxStrWidth(strs []string) int {
     }
     return maxW
 }
+
 

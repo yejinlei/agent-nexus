@@ -39,9 +39,9 @@ var rootCmd = &cobra.Command{
 
 支持的 agent:
   CLI:  codex, claude, kimi, deepseek, opencode, openclaw,
-        codebuddy, hermes, kiro, grok, qoder, trae
+        codebuddy, hermes, kiro, grok, qoder, trae, pi
   IDE:  cursor (via openai-compatible provider)
-  不可配置: antigravity, copilot, deveco, pi, qoder-ide, trae-ide,
+  不可配置: antigravity, copilot, deveco, qoder-ide, trae-ide,
             codebuddy-ide, windsurf, zed
 
 用法：
@@ -1104,7 +1104,7 @@ func installAllExecute(agents []install.Agent) error {
         }
         fmt.Printf("  正在安装 %s ...", a.Name)
         if isNpm {
-            if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage)); err != nil {
+            if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage), installForce); err != nil {
                 fmt.Printf(" ❌ %v\n", err)
             } else {
                 fmt.Println(" ✅")
@@ -1127,8 +1127,12 @@ func installAllExecute(agents []install.Agent) error {
     return nil
 }
 
-func executeNpmCommand(args string) error {
-    cmd := exec.Command("npm", strings.Fields(args)...)
+func executeNpmCommand(args string, force bool) error {
+    argsList := strings.Fields(args)
+    if force {
+        argsList = append(argsList, "--force")
+    }
+    cmd := exec.Command("npm", argsList...)
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
     return cmd.Run()
@@ -1205,7 +1209,7 @@ var installCmd = &cobra.Command{
                 fmt.Printf("卸载命令: %s\n", uninstCmd)
                 if installExecute {
                     fmt.Println("正在执行...")
-                    if err := executeNpmCommand(fmt.Sprintf("uninstall -g %s", ua.NpmPackage)); err != nil {
+                    if err := executeNpmCommand(fmt.Sprintf("uninstall -g %s", ua.NpmPackage), installForce); err != nil {
                         return fmt.Errorf("卸载失败: %v", err)
                     }
                     fmt.Println("✅ 卸载完成")
@@ -1297,7 +1301,7 @@ var installCmd = &cobra.Command{
                 fmt.Printf("更新命令: %s\n", updateCmd)
                 if installExecute {
                     fmt.Println("正在执行...")
-                    if err := executeNpmCommand(fmt.Sprintf("install -g %s", ua.NpmPackage)); err != nil {
+                    if err := executeNpmCommand(fmt.Sprintf("install -g %s", ua.NpmPackage), installForce); err != nil {
                         return fmt.Errorf("更新失败: %v", err)
                     }
                     fmt.Println("✅ 更新完成")
@@ -1343,7 +1347,7 @@ var installCmd = &cobra.Command{
         if installExecute {
             fmt.Println("正在执行...")
             if isNpm {
-                if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage)); err != nil {
+                if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage), installForce); err != nil {
                     return fmt.Errorf("安装失败: %v", err)
                 }
                 fmt.Println("✅ 安装完成")
@@ -1510,6 +1514,8 @@ func Execute() {
         os.Exit(1)
     }
 }
+
+
 
 
 

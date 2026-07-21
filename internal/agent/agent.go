@@ -39,6 +39,9 @@ func NewWriterRegistry() *WriterRegistry {
 			newGrokWriter(),
 			newQoderWriter(),
 			newTraeWriter(),
+
+			// Pi (JSON-based config)
+			newPiWriter(),
 		},
 	}
 }
@@ -55,4 +58,5 @@ func (r *WriterRegistry) Get(name string) ConfigWriter {
 func (r *WriterRegistry) All() []ConfigWriter {
 	return r.writers
 }
+
 

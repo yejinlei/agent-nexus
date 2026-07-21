@@ -163,13 +163,11 @@ var registry = []Agent{
 		Name:      "pi",
 		Display:   "Pi CLI",
 		Category:  "cli",
-		NpmPackage: "",
+		NpmPackage: "@earendil-works/pi-coding-agent",
 		UninstallPaths: []string{".pi"},
-		Download:  map[string]string{
-			PlatformWindows: "https://pi.dev/install.ps1",
-		},
+		Download:  map[string]string{},
 		Protocol:  "none",
-		Notes:     "Inflection Pi — AI coding assistant; install via pi.dev/install.ps1",
+		Notes:     "Inflection Pi CLI — npm package @earendil-works/pi-coding-agent",
 	},
 	{
 		Name:      "deveco",

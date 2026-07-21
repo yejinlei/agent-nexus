@@ -375,3 +375,25 @@ func (r *SniffResult) IsOpenAICompatible() bool {
 func (r *SniffResult) HasMultipleFormats() bool {
 	return r.OpenAICap && r.AnthropicCap
 }
+
+// UpstreamModelList fetches the list of available model IDs from the proxy's
+// /v1/models endpoint. Returns a slice of model IDs (empty slice on failure).
+// Pass the full base URL including /v1 (e.g. "http://127.0.0.1:3688/v1").
+func UpstreamModelList(baseURL, apiKey string) []string {
+    baseURL = strings.TrimSuffix(baseURL, "/")
+    if !strings.HasSuffix(baseURL, "/v1") {
+        baseURL += "/v1"
+    }
+    modelsURL := baseURL + "/models"
+    client := &http.Client{Timeout: 10 * time.Second}
+    body, err := doRequest(client, "GET", modelsURL, apiKey, nil)
+    if err != nil {
+        return nil
+    }
+    models, _ := parseModels(body)
+    ids := make([]string, 0, len(models))
+    for _, m := range models {
+        ids = append(ids, m.ID)
+    }
+    return ids
+}
