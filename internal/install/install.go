@@ -160,6 +160,18 @@ var registry = []Agent{
 		Notes:     "GitHub Copilot — npm package name placeholder; GitHub account controls provider",
 	},
 	{
+		Name:      "pi",
+		Display:   "Pi CLI",
+		Category:  "cli",
+		NpmPackage: "",
+		UninstallPaths: []string{".pi"},
+		Download:  map[string]string{
+			PlatformWindows: "https://pi.dev/install.ps1",
+		},
+		Protocol:  "none",
+		Notes:     "Inflection Pi — AI coding assistant; install via pi.dev/install.ps1",
+	},
+	{
 		Name:      "deveco",
 		Display:   "Deveco Studio / CLI",
 		Category:  "cli",
@@ -172,16 +184,6 @@ var registry = []Agent{
 		},
 		Protocol: "none",
 		Notes:    "Huawei Devecode / Deveco — openai model config unavailable; own model directory",
-	},
-	{
-		Name:      "pi",
-		Display:   "Pi CLI",
-		Category:  "cli",
-		NpmPackage: "",
-		UninstallPaths: []string{".pi"},
-		Download:  map[string]string{},
-		Protocol:  "none",
-		Notes:     "Inflection Pi — app store / manual install; npm package no longer available",
 	},
 	{
 		Name:      "kiro",
