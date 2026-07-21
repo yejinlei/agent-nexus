@@ -7,8 +7,13 @@ type ConfigWriter interface {
 	Name() string
 	Category() string
 	CanConfigure(p *proxy.Proxy) bool
-	Configure(path string, p *proxy.Proxy) error
+	// Configure writes the proxy config. If model is non-empty, the agent
+	// will be written with that model name instead of its default.
+	Configure(path string, p *proxy.Proxy, model string) error
+	// Status reports whether the agent is configured.
 	Status(path string) (bool, string)
+	// StatusModel reports configured model name, source, and notes.
+	StatusModel(path string) (model, source, notes string)
 }
 
 // WriterRegistry holds all config writers
@@ -50,3 +55,4 @@ func (r *WriterRegistry) Get(name string) ConfigWriter {
 func (r *WriterRegistry) All() []ConfigWriter {
 	return r.writers
 }
+

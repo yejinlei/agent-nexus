@@ -126,7 +126,7 @@ os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 		},
 	}
 
-	err := w.Configure(cfgPath, p)
+	err := w.Configure(cfgPath, p, "")
 	if err != nil {
 		t.Fatalf("Configure(%s) error = %v", writerName, err)
 	}
@@ -174,7 +174,7 @@ func TestCodexWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("codex")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -200,7 +200,7 @@ func TestClaudeWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("claude")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -231,7 +231,7 @@ func TestCursorWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("cursor")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -254,7 +254,7 @@ func TestDeepSeekWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("deepseek")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -272,7 +272,7 @@ func TestOpenCodeWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("opencode")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -288,7 +288,7 @@ func TestHermesWriter_Content(t *testing.T) {
 	w := NewWriterRegistry().Get("hermes")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
@@ -310,7 +310,7 @@ func TestWriterConfigure_NonexistentFile(t *testing.T) {
 			t.Fatalf("writer %s not found", writerName)
 		}
 		p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
-		err := w.Configure(cfgPath, p)
+		err := w.Configure(cfgPath, p, "")
 		if err == nil {
 			t.Errorf("Configure(%s) should fail on nonexistent file", writerName)
 		}
@@ -381,7 +381,7 @@ func TestOpenClawWriter_ExtendsExisting(t *testing.T) {
 	w := NewWriterRegistry().Get("openclaw")
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p); err != nil {
+	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"agent-nexus/internal/proxy"
@@ -15,10 +16,11 @@ func (w *kimiWriter) Name() string                     { return "kimi" }
 func (w *kimiWriter) Category() string                 { return "cli" }
 func (w *kimiWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
-func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
-	// Write a clean Kimi config that lets it discover models from the provider
-	// without a default_model constraint that requires [models] entries.
-	content := "# Kimi CLI Configuration - CCX Proxy\n" +
+// kimiConfigContent generates the config content shared by both kimi-code and kimi-legacy.
+// Includes model at [providers.ccx] level for kimi-legacy compatibility,
+// and [providers.ccx.models].default for kimi-code compatibility.
+func kimiConfigContent(p *proxy.Proxy, model string) string {
+	return "# Kimi CLI Configuration - CCX Proxy\n" +
 		"# Default model is auto-selected by Kimi from the ccx provider\n" +
 		"default_thinking = true\n" +
 		"default_yolo = false\n" +
@@ -34,9 +36,10 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
 		"[providers.ccx]\n" +
 		"type = \"openai_legacy\"\n" +
 		"base_url = \"" + p.BaseURL + "\"\n" +
-		"api_key = \"" + p.APIKey + "\"\n\n" +
+		"api_key = \"" + p.APIKey + "\"\n" +
+		"model = \"" + model + "\"\n\n" + // model at provider level for kimi-legacy
 		"[providers.ccx.models]\n" +
-		"default = \"sensenova-6.7-flash-lite\"\n\n" +
+		"default = \"" + model + "\"\n\n" +
 		"[loop_control]\n" +
 		"max_steps_per_turn = 1000\n" +
 		"max_retries_per_step = 3\n" +
@@ -60,8 +63,41 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy) error {
 		"[services]\n\n" +
 		"[mcp.client]\n" +
 		"tool_call_timeout_ms = 60000\n"
+}
 
-	return os.WriteFile(path, []byte(content), 0644)
+func (w *kimiWriter) Configure(path string, p *proxy.Proxy, model string) error {
+	if model == "" {
+		model = "gpt-5.5"
+	}
+	// Determine user home directory to also write to legacy kimi config path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	content := kimiConfigContent(p, model)
+
+	// Primary path: write to the discovered config path (kimi-code or kimi)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Secondary path: also write to the other known kimi config location.
+	// This ensures both kimi-code (~/.kimi-code/config.toml) and
+	// kimi-legacy (~/.kimi/config.toml) receive the correct config.
+	var secondaryPath string
+	switch {
+	case strings.Contains(path, ".kimi-code"):
+		secondaryPath = filepath.Join(home, ".kimi", "config.toml")
+	case strings.Contains(path, ".kimi/config"):
+		secondaryPath = filepath.Join(home, ".kimi-code", "config.toml")
+	default:
+		// Unknown path; also try both standard locations
+		_ = os.WriteFile(filepath.Join(home, ".kimi-code", "config.toml"), []byte(content), 0644)
+		return os.WriteFile(filepath.Join(home, ".kimi", "config.toml"), []byte(content), 0644)
+	}
+
+	return os.WriteFile(secondaryPath, []byte(content), 0644)
 }
 
 func (w *kimiWriter) Status(path string) (bool, string) {
@@ -73,5 +109,19 @@ func (w *kimiWriter) Status(path string) (bool, string) {
 	return false, "未配置代理"
 }
 
-
-
+func (w *kimiWriter) StatusModel(path string) (model, source, notes string) {
+	_, source, notes = defaultModelInfo(w.Name())
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "error", "配置文件未找到"
+	}
+	s := string(data)
+	// Look for model = "xxx" in the TOML
+	if idx := strings.Index(s, "model = \""); idx >= 0 {
+		end := strings.Index(s[idx+len("model = \""):], "\"")
+		if end >= 0 {
+			return s[idx+len("model = \""):idx+len("model = \"")+end], source, notes
+		}
+	}
+	return "", source, notes
+}

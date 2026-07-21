@@ -1,4 +1,4 @@
-# agent-nexus 用户使用手册
+﻿# agent-nexus 用户使用手册
 
 ## 核心概念
 
@@ -217,7 +217,58 @@ graph LR
 ```
 
 支持显示的模型字段：`context_length`、`max_output_length`、`input_modalities`、`output_modalities`、`supported_features`、`quantization`、`description`、`pricing`、`datacenters`、`businesses` 等。
-## 工作流程
+
+### install — 安装/卸载/更新 agent 运行时
+
+```powershell
+# 显示可安装的 agent 列表
+.gent-nexus.exe install list
+
+# 安装指定 agent（自动选择平台）
+.gent-nexus.exe install codex
+.gent-nexus.exe install claude
+.gent-nexus.exe install kimi
+
+# 安装全部 CLI agent
+.gent-nexus.exe install --all
+
+# 卸载指定 agent
+.gent-nexus.exe install uninstall codex
+.gent-nexus.exe install uninstall claude
+
+# 更新指定 agent
+.gent-nexus.exe install update codex
+.gent-nexus.exe install update deepseek
+```
+
+支持 15 个 agent 运行时，覆盖 Windows、Linux、macOS 三个平台。
+
+| agent | 类型 | 安装方式 | 说明 |
+|-------|------|----------|------|
+| codex | CLI | npm install -g @openai/codex | Anthropic Codex CLI |
+| claude | CLI | npm install -g @anthropic-ai/claude-code | Anthropic Claude CLI |
+| kimi | CLI | 直接下载 | Kimi CLI (ACP) |
+| deepseek | CLI | 直接下载 | DeepSeek TUI |
+| opencode | CLI | 直接下载 | OpenCode CLI |
+| openclaw | CLI | 直接下载 | OpenClaw CLI |
+| cursor | IDE | 直接下载 | Cursor IDE |
+| codebuddy | CLI | 直接下载 | CodeBuddy CLI |
+| hermes | CLI | 直接下载 | Hermes CLI (ACP) |
+| kiro | CLI | 直接下载 | Kiro CLI (ACP) |
+| grok | CLI | 直接下载 | Grok CLI (ACP) |
+| qoder | CLI | 直接下载 | Qoder CLI (ACP) |
+| trae | CLI | 直接下载 | Trae CLI (ACP) |
+| lmstudio | CLI | npm install -g lmstudio | LM Studio CLI |
+| clawx | IDE | 直接下载 | ClawX IDE |
+
+卸载说明：
+- npm 包：自动显示 `npm uninstall -g <package>` 命令
+- 直接下载：提示手动删除二进制文件（因为无法确定安装路径）
+
+更新说明：
+- npm 包：重新安装即可更新（`npm install -g <package>`）
+- 直接下载：重新下载覆盖原文件
+\n## 工作流程
 
 ```mermaid
 sequenceDiagram

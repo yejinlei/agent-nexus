@@ -15,7 +15,12 @@ func (w *openCodeWriter) Name() string     { return "opencode" }
 func (w *openCodeWriter) Category() string { return "cli" }
 func (w *openCodeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
-func (w *openCodeWriter) Configure(path string, p *proxy.Proxy) error {
+func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) error {
+	if model == "" {
+		model = "myccx/glm-5.2"
+	}
+	smallModel := "myccx/deepseek-v4-flash"
+
 	var cfg map[string]interface{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -25,9 +30,9 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy) error {
 	}
 
 	provider := map[string]interface{}{
-		"$schema": "https://opencode.ai/config.json",
-		"model":   "myccx/glm-5.2",
-		"small_model": "myccx/deepseek-v4-flash",
+		"$schema":     "https://opencode.ai/config.json",
+		"model":       model,
+		"small_model": smallModel,
 	}
 
 	provMap := map[string]interface{}{
@@ -45,8 +50,8 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy) error {
 	}
 	provider["provider"] = provMap
 
-	cfg["model"] = "myccx/glm-5.2"
-	cfg["small_model"] = "myccx/deepseek-v4-flash"
+	cfg["model"] = model
+	cfg["small_model"] = smallModel
 	cfg["provider"] = provMap
 
 	out, _ := json.MarshalIndent(cfg, "", "  ")
@@ -59,3 +64,11 @@ func (w *openCodeWriter) Status(path string) (bool, string) {
 	return strings.Contains(s, "127.0.0.1") && strings.Contains(s, "3688"), "via CCX proxy"
 }
 
+func (w *openCodeWriter) StatusModel(path string) (model, source, notes string) {
+	_, source, notes = defaultModelInfo(w.Name())
+	model, found := extractModelFromConfig(path)
+	if found {
+		return model, source, notes
+	}
+	return "", source, notes
+}

@@ -3,7 +3,9 @@ package cmd
 import (
     "fmt"
     "os"
+    "os/exec"
     "path/filepath"
+    "runtime"
     "sort"
     "strings"
     "time"
@@ -12,6 +14,7 @@ import (
     "agent-nexus/internal/agent"
     "agent-nexus/internal/backup"
     "agent-nexus/internal/discover"
+    "agent-nexus/internal/install"
     "agent-nexus/internal/model"
     "agent-nexus/internal/proxy"
     "agent-nexus/internal/sniff"
@@ -58,6 +61,10 @@ var rootCmd = &cobra.Command{
 }
 
 var proxySettings *proxy.Proxy
+
+var installAll bool
+var installExecute bool = true
+var installForce bool
 
 func init() {
     rootCmd.PersistentFlags().StringVar(&homeDir, "home", "", "user home directory (auto-detected by default)")
@@ -562,6 +569,7 @@ var branchCmd = &cobra.Command{
 // configureCmd backs up then configures selected agents (required --agents flag)
 var (
     configureAgents string
+    configureModels string  // optional: "agent=model,agent2=model2"
 )
 
 var configureCmd = &cobra.Command{
@@ -572,12 +580,17 @@ var configureCmd = &cobra.Command{
 必选参数:
   --agents  要配置的 agent 名称（逗号分隔）或 all 表示配置所有已安装的 agent
 
+可选参数:
+  --models  用 模型名 覆盖默认映射，格式: "agent=模型名,agent2=模型名2"
+            如: --models "codex=gpt-5.5,claude=deepseek-v4-flash"
+
 配置前会自动创建配置快照，支持后续回滚。
 
 示例:
   agent-nexus configure --agents all              # 配置所有已安装的 agent
   agent-nexus configure --agents claude,kimi      # 仅配置 Claude 和 Kimi
   agent-nexus configure --agents codex             # 仅配置 Codex
+  agent-nexus configure --agents all --models "codex=gpt-5.5"  # 覆盖模型
 `,
     RunE: func(cmd *cobra.Command, args []string) error {
         if configureAgents == "" {
@@ -587,7 +600,7 @@ var configureCmd = &cobra.Command{
         home := userHomeDir()
         destRoot := filepath.Join(home, ".codex", "backups")
 
-        fmt.Println("[1/5] 检测 AI 代理...")
+        fmt.Println("[1/6] 检测 AI 代理...")
         p, err := getProxySettings()
         if err != nil {
             proxySettings = p
@@ -599,7 +612,17 @@ var configureCmd = &cobra.Command{
         fmt.Printf("  ✅ 代理类型: %s  地址: %s  密钥: %s\n", p.Source, p.BaseURL, p.APIKey)
         fmt.Println()
 
-        fmt.Println("[2/5] 扫描已安装的 agent...")
+        // Fetch upstream model list for resolution
+        fmt.Println("  正在获取上游模型列表...")
+        upstreamModels := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+        if len(upstreamModels) > 0 {
+            fmt.Printf("  上游可用模型 (%d): %v\n", len(upstreamModels), upstreamModels)
+        } else {
+            fmt.Println("  ⚠ 无法获取上游模型列表（将仅使用代理模型映射）")
+        }
+        fmt.Println()
+
+        fmt.Println("[2/6] 扫描已安装的 agent...")
         agents := discover.Discover()
         fmt.Printf("  发现 %d 个 agent\n\n", len(agents))
 
@@ -631,12 +654,8 @@ var configureCmd = &cobra.Command{
 
         // Filter: only installed agents
         nameToAgent := map[string]discover.AgentInfo{}
-        var configuredNames []string
         for _, a := range agents {
             nameToAgent[a.Name] = a
-            if a.HasConfig && a.IsConfigurable {
-                configuredNames = append(configuredNames, a.Name)
-            }
         }
 
         var toConfigure []discover.AgentInfo
@@ -662,7 +681,53 @@ var configureCmd = &cobra.Command{
             return nil
         }
 
-        fmt.Println("[3/5] 创建配置快照...")
+        // [3/6] Resolve model mappings
+        fmt.Println("[3/6] 解析模型映射...")
+        resolutions := model.ResolveAllModels(upstreamModels, p.ModelMap)
+        fmt.Println()
+
+        // Parse --models overrides
+        overrides := make(map[string]string)
+        if configureModels != "" {
+            for _, pair := range strings.Split(configureModels, ",") {
+                pair = strings.TrimSpace(pair)
+                if idx := strings.Index(pair, "="); idx > 0 {
+                    agent := strings.TrimSpace(pair[:idx])
+                    m := strings.TrimSpace(pair[idx+1:])
+                    if m != "" {
+                        overrides[agent] = m
+                    }
+                }
+            }
+        }
+
+        // Show resolution table
+        fmt.Println("  模型映射预览:")
+        fmt.Printf("  %-14s %-30s [%s]\n", "Agent", "模型", "来源")
+        fmt.Println(strings.Repeat("-", 70))
+        for _, r := range resolutions {
+            displayModel := r.Model
+            src := r.Source
+            if ov, ok := overrides[r.Agent]; ok {
+                displayModel = ov
+                src = "override"
+            }
+            if src == "upstream" {
+                src = "上游直接"
+            } else if src == "proxy-map" {
+                src = "代理重定向"
+            } else if src == "default" {
+                src = "默认"
+            }
+            fmt.Printf("  %-14s %-30s [%s]\n", r.Agent, displayModel, src)
+            if r.Notes != "" {
+                fmt.Printf("    └─ %s\n", r.Notes)
+            }
+        }
+        fmt.Println()
+
+        // [4/6] Create snapshot
+        fmt.Println("[4/6] 创建配置快照...")
         r := versioning.LoadRegistry(destRoot)
         var snapshotPaths []string
         for _, a := range toConfigure {
@@ -678,7 +743,8 @@ var configureCmd = &cobra.Command{
         }
         fmt.Println()
 
-        fmt.Println("[4/5] 备份现有配置（兼容旧格式）...")
+        // [5/6] Backup
+        fmt.Println("[5/6] 备份现有配置（兼容旧格式）...")
         var backupPaths []string
         for _, a := range toConfigure {
             if a.HasConfig {
@@ -700,7 +766,8 @@ var configureCmd = &cobra.Command{
         }
         fmt.Println()
 
-        fmt.Println("[5/5] 配置 agent...")
+        // [6/6] Configure
+        fmt.Println("[6/6] 配置 agent...")
         reg := agent.NewWriterRegistry()
         configured := 0
         skipped := 0
@@ -718,14 +785,24 @@ var configureCmd = &cobra.Command{
                 continue
             }
 
-            err := writer.Configure(a.ConfigPath, p)
+            // Resolve model for this agent
+            resolvedModel, found := model.ModelToWrite(resolutions, overrides, a.Name)
+            if !found {
+                resolvedModel = ""
+            }
+
+            err := writer.Configure(a.ConfigPath, p, resolvedModel)
             if err != nil {
                 fmt.Printf("  ❌ %s: %v\n", a.Name, err)
                 fmt.Println("  提示: 使用 'agent-nexus restore latest' 回滚到此操作前的快照")
                 skipped++
             } else {
+                wmodel, wsrc, wnotes := writer.StatusModel(a.ConfigPath)
                 _, status := writer.Status(a.ConfigPath)
-                fmt.Printf("  ✅ %s → %s\n", a.Name, status)
+                fmt.Printf("  ✅ %s → %s [%s: %s]\n", a.Name, status, wmodel, wsrc)
+                if wnotes != "" {
+                    fmt.Printf("    └─ %s\n", wnotes)
+                }
                 configured++
             }
         }
@@ -735,7 +812,8 @@ var configureCmd = &cobra.Command{
             fmt.Println("如需回滚: agent-nexus restore latest")
         }
 
-        fmt.Println("\n模型路由表:")
+        // Show updated routing table
+        fmt.Println("\n更新后模型路由表:")
         routing := model.BuildRoutingTable(p)
         for _, r := range routing {
             fmt.Printf("  %-10s %-30s → %-30s [%s]\n", r.Agent, r.Model, r.Target, r.Source)
@@ -906,6 +984,444 @@ var sniffCmd = &cobra.Command{
         return nil
     },
 }
+
+func executeCommand(fullCmd string) error {
+    if runtime.GOOS == "windows" {
+        fileName := filepath.Base(fullCmd)
+        // Handle .ps1 PowerShell scripts - download to temp file, then execute
+        // Try pwsh.exe (PowerShell 7) first since kimi/hermes scripts require Get-FileHash
+        // which may not work in old Windows PowerShell 5.1 non-interactive sessions
+        if strings.HasSuffix(fileName, ".ps1") {
+            scriptPath := filepath.Join(os.Getenv("TEMP"), "agent-nexus-install.ps1")
+
+            // Find PowerShell executable: prefer pwsh.exe (PowerShell 7)
+            pwshCmd := "pwsh.exe"
+            if _, err := exec.LookPath(pwshCmd); err != nil {
+                pwshCmd = "powershell.exe"
+            }
+
+            // Step 1: Download the script
+            dlArgs := []string{
+                "-ExecutionPolicy", "Bypass",
+                "-Command",
+                fmt.Sprintf("irm -UseBasicParsing %q -OutFile %q", fullCmd, scriptPath),
+            }
+            dlCmd := exec.Command(pwshCmd, dlArgs...)
+            dlCmd.Stdout = os.Stdout
+            dlCmd.Stderr = os.Stderr
+            if err := dlCmd.Run(); err != nil {
+                return fmt.Errorf("下载安装脚本失败: %v", err)
+            }
+            if _, err := os.Stat(scriptPath); err != nil {
+                return fmt.Errorf("安装脚本下载失败: %s 未找到", scriptPath)
+            }
+
+            // Step 2: Execute the downloaded script
+            runCmd := exec.Command(pwshCmd,
+                "-ExecutionPolicy", "Bypass",
+                "-File", scriptPath)
+            runCmd.Stdout = os.Stdout
+            runCmd.Stderr = os.Stderr
+            if err := runCmd.Run(); err != nil {
+                os.Remove(scriptPath)
+                return err
+            }
+            os.Remove(scriptPath)
+            return nil
+        }
+        destPath := filepath.Join(os.Getenv("TEMP"), fileName)
+        downloadCmd := fmt.Sprintf("powershell -Command \"Invoke-WebRequest -Uri '%s' -OutFile '%s'\"", fullCmd, destPath)
+        cmd := exec.Command("cmd", "/c", downloadCmd)
+        cmd.Stdout = os.Stdout
+        cmd.Stderr = os.Stderr
+        if err := cmd.Run(); err != nil {
+            return fmt.Errorf("下载失败: %v", err)
+        }
+        // 验证文件下载成功
+        if _, err := os.Stat(destPath); err != nil {
+            return fmt.Errorf("下载失败: 文件未找到 (%s)", destPath)
+        }
+        execCmd := exec.Command(destPath)
+        execCmd.Stdout = os.Stdout
+        execCmd.Stderr = os.Stderr
+        return execCmd.Run()
+    }
+    fileName := filepath.Base(fullCmd)
+    tmpPath := filepath.Join("/tmp", fileName)
+    cmd := exec.Command("sh", "-c", fmt.Sprintf("curl -L -o %s %s", tmpPath, fullCmd))
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("下载失败: %v", err)
+    }
+    // 验证文件下载成功
+    if _, err := os.Stat(tmpPath); err != nil {
+        return fmt.Errorf("下载失败: 文件未找到 (%s)", tmpPath)
+    }
+    execCmd := exec.Command(tmpPath)
+    execCmd.Stdout = os.Stdout
+    execCmd.Stderr = os.Stderr
+    return execCmd.Run()
+}
+
+
+func installAllRuntimes() error {
+    agents := install.GetByCategory("cli")
+    if len(agents) == 0 {
+        fmt.Println("未找到可安装的 CLI agent。")
+        return nil
+    }
+    if installExecute {
+        return installAllExecute(agents)
+    }
+    fmt.Printf("\n正在安装 %d 个 CLI agent 运行时...\n", len(agents))
+    fmt.Println(strings.Repeat("-", 60))
+    for _, a := range agents {
+        cmdStr, _, _ := a.InstallCommand()
+        if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
+            continue
+        }
+        _, isNpm, isPip := a.InstallCommand()
+        if isNpm {
+            fmt.Printf("  %-12s  npm install -g %s\n", a.Name, a.NpmPackage)
+        } else if isPip {
+            fmt.Printf("  %-12s  pip install %s\n", a.Name, a.PipPackage)
+        } else {
+            fmt.Printf("  %-12s  %s\n", a.Name, cmdStr)
+        }
+    }
+    fmt.Printf("\n依次运行上述命令完成安装，然后运行: agent-nexus discover 确认安装成功\n")
+    return nil
+}
+
+func installAllExecute(agents []install.Agent) error {
+    fmt.Printf("\n正在安装 %d 个 CLI agent 运行时...\n", len(agents))
+    fmt.Println(strings.Repeat("-", 60))
+    for _, a := range agents {
+        cmdStr, isNpm, isPip := a.InstallCommand()
+        if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
+            continue
+        }
+        fmt.Printf("  正在安装 %s ...", a.Name)
+        if isNpm {
+            if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage)); err != nil {
+                fmt.Printf(" ❌ %v\n", err)
+            } else {
+                fmt.Println(" ✅")
+            }
+        } else if isPip {
+            if err := executePipCommand(fmt.Sprintf("install %s", a.PipPackage)); err != nil {
+                fmt.Printf(" ❌ %v\n", err)
+            } else {
+                fmt.Println(" ✅")
+            }
+        } else {
+            if err := executeCommand(cmdStr); err != nil {
+                fmt.Printf(" ❌ %v\n", err)
+            } else {
+                fmt.Println(" ✅")
+            }
+        }
+    }
+    fmt.Printf("\n安装完成，运行: agent-nexus discover 确认安装成功\n")
+    return nil
+}
+
+func executeNpmCommand(args string) error {
+    cmd := exec.Command("npm", strings.Fields(args)...)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return cmd.Run()
+}
+func executePipCommand(args string) error {
+	xmd := exec.Command("pip", strings.Fields(args)...)
+	xmd.Stdout = os.Stdout
+	xmd.Stderr = os.Stderr
+	return xmd.Run()
+}
+
+
+
+
+// installCmd is the parent command for installing agent runtimes
+var installCmd = &cobra.Command{
+    Use:   "install",
+    Short: "安装 agent 运行时",
+    Long: `安装各种 AI agent 运行时，支持 Windows、Linux、macOS 三个平台。
+
+使用方式:
+  agent-nexus install list                # 显示可安装的 agent 列表
+  agent-nexus install <name>              # 一键安装指定 agent
+  agent-nexus install uninstall <name>    # 卸载指定 agent
+  agent-nexus install update <name>       # 更新指定 agent
+
+示例:
+  agent-nexus install codex
+  agent-nexus install claude
+  agent-nexus install --all               # 安装全部 CLI agent
+  agent-nexus install --all --execute     # 自动执行安装
+  agent-nexus install uninstall codex
+  agent-nexus install update codex
+`,
+    RunE: func(cmd *cobra.Command, args []string) error {
+        if installAll {
+            return installAllRuntimes()
+        }
+        if len(args) == 0 {
+            return cmd.Usage()
+        }
+        name := args[0]
+        if name == "list" {
+            agents := install.AllRuntimes()
+            fmt.Printf("\n可安装的 agent 运行时 (%d 个):\n", len(agents))
+            fmt.Println(strings.Repeat("-", 80))
+            fmt.Printf("  %-10s  %-5s  %-8s  %-35s  %s\n",
+                "Name", "Type", "Install", "Display", "Notes")
+            fmt.Println(strings.Repeat("-", 80))
+            for _, a := range agents {
+                cmdStr, _, _ := a.InstallCommand()
+                if len(cmdStr) > 35 {
+                    cmdStr = cmdStr[:35]
+                }
+                fmt.Printf("  %-10s  %-5s  %-8s  %-35s  %s\n",
+                    a.Name, a.Category, cmdStr, a.Display, a.Notes)
+            }
+            fmt.Println()
+            return nil
+        }
+        if name == "uninstall" {
+            if len(args) < 2 {
+                return fmt.Errorf("请指定要卸载的 agent 名称\n\n用法: agent-nexus install uninstall <name>")
+            }
+            uninstallName := args[1]
+            ua := install.GetByName(uninstallName)
+            if ua == nil {
+                return fmt.Errorf("未知 agent: %s\n\n可用列表: agent-nexus install list", uninstallName)
+            }
+            uninstCmd, isNpm, isPip := ua.UninstallCommand()
+            fmt.Printf("正在卸载 %s (%s)...\n", ua.Display, ua.Name)
+            fmt.Println()
+            if isNpm {
+                fmt.Printf("卸载命令: %s\n", uninstCmd)
+                if installExecute {
+                    fmt.Println("正在执行...")
+                    if err := executeNpmCommand(fmt.Sprintf("uninstall -g %s", ua.NpmPackage)); err != nil {
+                        return fmt.Errorf("卸载失败: %v", err)
+                    }
+                    fmt.Println("✅ 卸载完成")
+                } else {
+                    fmt.Printf("\n运行以下命令完成卸载:\n  %s\n", uninstCmd)
+                    fmt.Printf("\n卸载完成后运行: agent-nexus discover 确认卸载成功\n")
+                }
+            } else if isPip {
+                fmt.Printf("卸载命令: %s\n", uninstCmd)
+                if installExecute {
+                    fmt.Println("正在执行...")
+                    if err := executePipCommand(fmt.Sprintf("uninstall %s", ua.PipPackage)); err != nil {
+                        return fmt.Errorf("卸载失败: %v", err)
+                    }
+                    fmt.Println("✅ 卸载完成")
+                } else {
+                    fmt.Printf("\n运行以下命令完成卸载:\n  %s\n", uninstCmd)
+                }
+            } else {
+                fmt.Printf("正在卸载 %s (%s)...\n", ua.Display, ua.Name)
+                fmt.Println()
+                uninstallPaths := ua.GetUninstallPaths()
+                legacyBinPaths := ua.GetLegacyBinPaths()
+                home, _ := os.UserHomeDir()
+                if installExecute {
+                    fmt.Println("正在执行卸载...")
+                    allRemoved := true
+                    // 1. Delete directory paths (e.g. ~/.kimi-code/)
+                    for _, rel := range uninstallPaths {
+                        full := filepath.Join(home, rel)
+                        if _, err := os.Stat(full); err == nil {
+                            fmt.Printf("  删除 %s ...", rel)
+                            if err := os.RemoveAll(full); err != nil {
+                                fmt.Printf(" ❌ %v\n", err)
+                                allRemoved = false
+                            } else {
+                                fmt.Println(" ✅")
+                            }
+                        } else {
+                            fmt.Printf("  %s 未找到（已跳过）\n", rel)
+                        }
+                    }
+                    // 2. Delete individual legacy binary files
+                    for _, rel := range legacyBinPaths {
+                        full := filepath.Join(home, rel)
+                        if _, err := os.Stat(full); err == nil {
+                            fmt.Printf("  删除 %s ...", rel)
+                            if err := os.Remove(full); err != nil {
+                                fmt.Printf(" ❌ %v\n", err)
+                                allRemoved = false
+                            } else {
+                                fmt.Println(" ✅")
+                            }
+                        } else {
+                            fmt.Printf("  %s 未找到（已跳过）\n", rel)
+                        }
+                    }
+                    if allRemoved {
+                        fmt.Println("✅ 卸载完成")
+                    }
+                } else {
+                    fmt.Printf("需要删除以下目录/文件:\n")
+                    for _, rel := range uninstallPaths {
+                        full := filepath.Join(home, rel)
+                        fmt.Printf("  %s\n", full)
+                    }
+                    for _, rel := range legacyBinPaths {
+                        full := filepath.Join(home, rel)
+                        fmt.Printf("  %s\n", full)
+                    }
+                    fmt.Printf("\n运行: agent-nexus install uninstall %s --execute 执行删除\n", ua.Name)
+                }
+            }
+            return nil
+        }
+        if name == "update" {
+            if len(args) < 2 {
+                return fmt.Errorf("请指定要更新的 agent 名称\n\n用法: agent-nexus install update <name>")
+            }
+            updateName := args[1]
+            ua := install.GetByName(updateName)
+            if ua == nil {
+                return fmt.Errorf("未知 agent: %s\n\n可用列表: agent-nexus install list", updateName)
+            }
+            updateCmd, isNpm, isPip := ua.UpdateCommand()
+            fmt.Printf("正在更新 %s (%s)...\n", ua.Display, ua.Name)
+            fmt.Println()
+            if isNpm {
+                fmt.Printf("更新命令: %s\n", updateCmd)
+                if installExecute {
+                    fmt.Println("正在执行...")
+                    if err := executeNpmCommand(fmt.Sprintf("install -g %s", ua.NpmPackage)); err != nil {
+                        return fmt.Errorf("更新失败: %v", err)
+                    }
+                    fmt.Println("✅ 更新完成")
+                } else {
+                    fmt.Printf("\n运行以下命令完成更新:\n  %s\n", updateCmd)
+                    fmt.Printf("\n更新完成后运行: agent-nexus discover 确认更新成功\n")
+                }
+            } else if isPip {
+                fmt.Printf("更新命令: %s\n", updateCmd)
+                if installExecute {
+                    fmt.Println("正在执行...")
+                    if err := executePipCommand(fmt.Sprintf("install --upgrade %s", ua.PipPackage)); err != nil {
+                        return fmt.Errorf("更新失败: %v", err)
+                    }
+                    fmt.Println("✅ 更新完成")
+                } else {
+                    fmt.Printf("\n运行以下命令完成更新:\n  %s\n", updateCmd)
+                    fmt.Printf("\n更新完成后运行: agent-nexus discover 确认更新成功\n")
+                }
+            } else {
+                fmt.Printf("更新命令: %s\n", updateCmd)
+                if installExecute {
+                    fmt.Println("正在执行...")
+                    if err := executeCommand(updateCmd); err != nil {
+                        return fmt.Errorf("更新失败: %v", err)
+                    }
+                    fmt.Println("✅ 更新完成")
+                } else {
+                    fmt.Printf("\n运行以下命令完成更新:\n  %s\n", updateCmd)
+                    fmt.Printf("\n更新完成后运行: agent-nexus discover 确认更新成功\n")
+                }
+            }
+            return nil
+        }
+        a := install.GetByName(name)
+        if a == nil {
+            return fmt.Errorf("未知 agent: %s\n\n可用列表: agent-nexus install list", name)
+        }
+        platform := install.CurrentPlatform()
+        fmt.Printf("正在安装 %s (%s) 到 %s...\n", a.Display, platform, a.Notes)
+        fmt.Println()
+        cmdStr, isNpm, isPip := a.InstallCommand()
+        if installExecute {
+            fmt.Println("正在执行...")
+            if isNpm {
+                if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage)); err != nil {
+                    return fmt.Errorf("安装失败: %v", err)
+                }
+                fmt.Println("✅ 安装完成")
+            } else if isPip {
+                if err := executePipCommand(fmt.Sprintf("install %s", a.PipPackage)); err != nil {
+                    return fmt.Errorf("安装失败: %v", err)
+                }
+                fmt.Println("✅ 安装完成")
+            } else if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
+                fmt.Printf("当前平台 (%s) 无可用安装命令\n", platform)
+                fmt.Printf("\n所有可用下载地址:\n")
+                for p, url := range a.Download {
+                    fmt.Printf("  %s: %s\n", p, url)
+                }
+                if a.NpmPackage != "" {
+                    fmt.Printf("\n如果通过 npm 安装: %s\n", "npm install -g " + a.NpmPackage)
+                }
+                if a.PipPackage != "" {
+                    fmt.Printf("\n如果通过 pip 安装: %s\n", "pip install " + a.PipPackage)
+                }
+            } else {
+                if err := executeCommand(cmdStr); err != nil {
+                    return fmt.Errorf("安装失败: %v", err)
+                }
+                fmt.Println("✅ 安装完成")
+                // Post-install: try to locate the installed binary and report its path
+                home, _ := os.UserHomeDir()
+                binPaths := []string{
+                    filepath.Join(home, ".kimi-code", "bin", "kimi.exe"),
+                    filepath.Join(home, ".kimi-code", "bin", "kimi"),
+                    filepath.Join(home, ".local", "bin", "kimi.exe"),
+                }
+                for _, bp := range binPaths {
+                    if _, err := os.Stat(bp); err == nil {
+                        fmt.Printf("\n已找到已安装的二进制文件: %s\n", bp)
+                        fmt.Printf("请在新的终端中运行: %s\n", filepath.Base(bp))
+                        break
+                    }
+                }
+            }
+            fmt.Printf("\n安装完成后运行: agent-nexus discover 确认安装成功\n")
+        } else {
+            if isNpm {
+                fmt.Printf("安装命令: %s\n", cmdStr)
+                fmt.Printf("\n运行以下命令完成安装:\n  %s\n", cmdStr)
+                fmt.Printf("\n安装完成后运行: agent-nexus discover 确认安装成功\n")
+                fmt.Printf("\n提示: 使用 --execute 或 -e 标志可直接执行安装\n")
+            } else if isPip {
+                fmt.Printf("安装命令: %s\n", cmdStr)
+                fmt.Printf("\n运行以下命令完成安装:\n  %s\n", cmdStr)
+                fmt.Printf("\n安装完成后运行: agent-nexus discover 确认安装成功\n")
+                fmt.Printf("\n提示: 使用 --execute 或 -e 标志可直接执行安装\n")
+            } else if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
+                fmt.Printf("当前平台 (%s) 无可用安装命令\n", platform)
+                fmt.Printf("\n所有可用下载地址:\n")
+                for p, url := range a.Download {
+                    fmt.Printf("  %s: %s\n", p, url)
+                }
+                if a.NpmPackage != "" {
+                    fmt.Printf("\n如果通过 npm 安装: %s\n", "npm install -g " + a.NpmPackage)
+                }
+                if a.PipPackage != "" {
+                    fmt.Printf("\n如果通过 pip 安装: %s\n", "pip install " + a.PipPackage)
+                }
+            } else {
+                fmt.Printf("下载地址: %s\n", cmdStr)
+                fmt.Printf("\n当前平台 (%s) 的安装方式:\n", platform)
+                fmt.Printf("  %s\n", cmdStr)
+                fmt.Printf("\n安装完成后运行: agent-nexus discover 确认安装成功\n")
+                fmt.Printf("\n提示: 使用 --execute 或 -e 标志可直接执行安装\n")
+            }
+        }
+        return nil
+    },
+}
+
+
+
 func init() {
     // backup flags
     backupCmd.Flags().StringVar(&backupBranch, "branch", "main", "快照所属分支名称")
@@ -921,6 +1437,7 @@ func init() {
 
     // configure flags
     configureCmd.Flags().StringVar(&configureAgents, "agents", "", "要配置的 agent 名称（逗号分隔），使用 all 配置所有已安装的 agent（必选）")
+    configureCmd.Flags().StringVar(&configureModels, "models", "", "可选：用 模型名 覆盖默认映射，格式: agent=模型名,agent2=模型名2，如 codex=gpt-5.5,claude=deepseek-v4")
     configureCmd.MarkFlagRequired("agents")
 
     // diff flags
@@ -956,6 +1473,10 @@ func init() {
     rootCmd.AddCommand(diffCmd)
     rootCmd.AddCommand(branchCmd)
     rootCmd.AddCommand(sniffCmd)
+    rootCmd.AddCommand(installCmd)
+    installCmd.Flags().BoolVarP(&installAll, "all", "a", false, "安装全部 CLI agent")
+    installCmd.Flags().BoolVarP(&installExecute, "execute", "e", true, "直接执行安装命令")
+    installCmd.Flags().BoolVar(&installForce, "force", false, "强制安装")
 }
 
 // Execute runs the root command
@@ -964,3 +1485,9 @@ func Execute() {
         os.Exit(1)
     }
 }
+
+
+
+
+
+

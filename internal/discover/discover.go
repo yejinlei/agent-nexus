@@ -3,6 +3,7 @@ package discover
 import (
     "fmt"
     "os"
+    "os/exec"
     "path/filepath"
     "strings"
 )
@@ -34,6 +35,7 @@ type AgentPath struct {
     Protocol       string
     ConfigFiles    []string
     HomeDirFiles   []string
+    BinaryName     string // npm binary name, checked via exec.LookPath as fallback
     IsConfigurable bool
     Notes          string
 }
@@ -67,9 +69,9 @@ var protocolMap = map[string]string{
 
 var registry = AgentRegistry{
     agents: []AgentPath{
-        {Name: "codex", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Codex/config.toml"}, IsConfigurable: true},
-        {Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Claude/settings.json"}, IsConfigurable: true},
-        {Name: "kimi", Category: "cli", Protocol: ProtocolACP, ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi/config.toml"}, IsConfigurable: true},
+        {Name: "codex", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Codex/config.toml"}, HomeDirFiles: []string{".codex/config.toml"}, BinaryName: "codex", IsConfigurable: true},
+        {Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Claude/settings.json"}, HomeDirFiles: []string{".claude/settings.json"}, BinaryName: "claude", IsConfigurable: true},
+        {Name: "kimi", Category: "cli", Protocol: ProtocolACP, ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi-code/config.toml", ".kimi/config.toml"}, BinaryName: "kimi", IsConfigurable: true},
         {Name: "deepseek", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
         {Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, IsConfigurable: true},
         {Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, IsConfigurable: true},
@@ -141,6 +143,13 @@ func Discover() []AgentInfo {
 
         if found && ap.IsConfigurable {
             info.IsConfigured = checkConfigured(configPath)
+        }
+
+        // If config file not found, also check if npm binary is in PATH
+        if !info.HasConfig && ap.BinaryName != "" {
+            if _, err := exec.LookPath(ap.BinaryName); err == nil {
+                info.HasConfig = true
+            }
         }
 
         results = append(results, info)
@@ -218,6 +227,9 @@ func RenderTable(agents []AgentInfo) {
         pathDisplay := a.ConfigPath
         if !a.HasConfig {
             pathDisplay = "-"
+        }
+        if a.HasConfig && a.ConfigPath == "" {
+            pathDisplay = "(via npm, no config yet)"
         }
 
         fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
@@ -398,7 +410,7 @@ func agentCustomIcon(a AgentInfo) string {
 func agentDefaultModel(name string) string {
     m := map[string]string{
         "codex":     "gpt-5.5",
-        "claude":    "fable",
+        "claude":    "claude-sonnet-4-20250514",
         "kimi":      "gpt-5.5",
         "deepseek":  "sensenova-6.7-flash-lite",
         "opencode":  "myccx/glm-5.2",
@@ -434,3 +446,4 @@ func maxStrWidth(strs []string) int {
     }
     return maxW
 }
+
