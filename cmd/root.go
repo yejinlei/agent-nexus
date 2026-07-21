@@ -1371,17 +1371,42 @@ var installCmd = &cobra.Command{
                 fmt.Println("✅ 安装完成")
                 // Post-install: try to locate the installed binary and report its path
                 home, _ := os.UserHomeDir()
+                name := a.Name
+                // Build likely binary paths dynamically from agent name
                 binPaths := []string{
-                    filepath.Join(home, ".kimi-code", "bin", "kimi.exe"),
-                    filepath.Join(home, ".kimi-code", "bin", "kimi"),
-                    filepath.Join(home, ".local", "bin", "kimi.exe"),
+                    filepath.Join(home, "."+name+"-code", "bin", name+".exe"),
+                    filepath.Join(home, "."+name+"-code", "bin", name),
+                    filepath.Join(home, "."+name, "bin", name+".exe"),
+                    filepath.Join(home, "."+name, "bin", name),
+                    filepath.Join(home, ".local", "bin", name+".exe"),
+                    filepath.Join(home, ".local", "bin", name),
+                    filepath.Join(home, "AppData", "Local", name, "bin", name+".exe"),
+                    filepath.Join(home, "AppData", "Local", name+"-code", "bin", name+".exe"),
                 }
+                found := false
                 for _, bp := range binPaths {
                     if _, err := os.Stat(bp); err == nil {
                         fmt.Printf("\n已找到已安装的二进制文件: %s\n", bp)
                         fmt.Printf("请在新的终端中运行: %s\n", filepath.Base(bp))
+                        found = true
                         break
                     }
+                }
+                if !found {
+                    // Also try exec.LookPath for agents that add their bin dir to PATH
+                    binName := name
+                    if runtime.GOOS == "windows" && !strings.HasSuffix(binName, ".exe") {
+                        binName = name + ".exe"
+                    }
+                    if binPath, err := exec.LookPath(binName); err == nil {
+                        fmt.Printf("\n已找到已安装的二进制文件: %s\n", binPath)
+                        fmt.Printf("请在新的终端中运行: %s\n", filepath.Base(binPath))
+                        found = true
+                    }
+                }
+                if !found {
+                    fmt.Printf("\n未找到已安装的二进制文件，请检查安装日志或手动查找\n")
+                    fmt.Printf("常见位置: ~/.%s-code/bin/ 或 ~/.%s/bin/\n", name, name)
                 }
             }
             fmt.Printf("\n安装完成后运行: agent-nexus discover 确认安装成功\n")

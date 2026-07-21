@@ -177,11 +177,11 @@ var registry = []Agent{
 		Name:      "pi",
 		Display:   "Pi CLI",
 		Category:  "cli",
-		NpmPackage: "@inflectionai/pi-cli",
+		NpmPackage: "",
 		UninstallPaths: []string{".pi"},
 		Download:  map[string]string{},
 		Protocol:  "none",
-		Notes:     "Inflection Pi CLI — npm package placeholder; no external model config",
+		Notes:     "Inflection Pi — app store / manual install; npm package no longer available",
 	},
 	{
 		Name:      "kiro",
