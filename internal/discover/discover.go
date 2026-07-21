@@ -65,6 +65,9 @@ var protocolMap = map[string]string{
     "zed":           ProtocolNone,
     "lmstudio":      ProtocolOpenAI,
     "clawx":         ProtocolOpenAI,
+    "gemini":      ProtocolNone,
+
+
 }
 
 var registry = AgentRegistry{
@@ -93,6 +96,7 @@ var registry = AgentRegistry{
         {Name: "zed", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Zed/settings.json"}, IsConfigurable: false, Notes: "No built-in AI Agent"},
         {Name: "lmstudio", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"LM Studio/settings.json"}, IsConfigurable: true},
         {Name: "clawx", Category: "ide", Protocol: ProtocolOpenAI, HomeDirFiles: []string{"AppData/Roaming/clawx/clawx-providers.json"}, IsConfigurable: true},
+        {Name: "gemini", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".gemini/config.json"}, IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
     },
 }
 

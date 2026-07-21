@@ -250,6 +250,17 @@ var registry = []Agent{
 		Protocol: "openai",
 		Notes:    "ClawX IDE — openai-compatible provider config",
 	},
+	{
+		Name:      "gemini",
+		Display:   "Gemini CLI",
+		Category:  "cli",
+		NpmPackage: "@google/gemini-cli",
+		UninstallPaths: []string{".gemini"},
+		Download:  map[string]string{},
+		Protocol:  "none",
+		Notes:     "Google Gemini CLI — npm package, Google auth (OAuth/API key)",
+	},
+
 }
 
 // CurrentPlatform returns the normalized platform string
@@ -261,8 +272,7 @@ func CurrentPlatform() string {
 		return PlatformDarwin
 	default:
 		return PlatformLinux
-	}
-}
+	}}
 
 // IsCLI checks if the current platform is CLI-capable (not IDE-only)
 func (a Agent) IsCLI() bool {
@@ -389,11 +399,3 @@ func GetByProtocol(protocol string) []Agent {
 	}
 	return result
 }
-
-
-
-
-
-
-
-
