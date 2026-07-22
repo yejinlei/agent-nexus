@@ -1,59 +1,66 @@
 # agent-nexus — AI Agent 配置自动化工具
 
-> 一个代理，统治它们。
+```
+$ ps aux | grep -E 'codex|claude|kimi|deepseek|cursor'
+ codex     80382  0.2  codex@localhost   ~/.codex/config.toml      → api.anthropic.com
+ claude    80383  0.3  claude@localhost  ~/.claude/settings.json   → api.anthropic.com
+ kimi      80384  0.1  kimi@localhost    ~/.kimi/config.toml       → moonshot.cn
+ deepseek  80385  0.2  deepseek@local    ~/.deepseek/config.toml   → api.deepseek.com
+ cursor    80386  0.4  cursor@localhost  Cursor/User/settings.json → api.openai.com
+ opencode  80387  0.1  opencode@local    ~/.config/opencode/*.jsonc → ...
+```
+
+每个 agent 都是自己的微服务，配置文件格式各异，API 端点各不相同。
+换代理？改 6 个文件。加 agent？再改一个。忘了备份？原地爆炸。
+
+**agent-nexus 是这台机器上所有 coding agent 的 /etc/hosts。**
+一条命令，把所有 agent 的上游端点统一重定向到一个 AI 消息网关。
 
 ---
 
-## 为什么存在
-
-你电脑上装了 codex、claude code、kimi、deepseek、opencode、cursor、openclaw……它们各自需要一个 API key 和 endpoint。管理 10+ 个 agent 的配置？手动改 JSON/YAML/TOML？每次换代理就重新配一遍？
-
-**这是 agent-nexus 存在的唯一理由：** 把 LLM 代理和 coding agent 之间的连接问题，从"逐个手配"变成"一次配置，全部生效"。
-
----
-
-## 核心概念：AI 消息网关 vs Agent 运行时
+## 架构
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AI 消息网关 (LLM Proxy)                    │
-│                                                                  │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────────┐  │
-│  │ CCX      │   │ CC-Switch│   │ Sensitive│   │ Custom Proxy │  │
-│  │ Desktop  │   │          │   │ Nova     │   │              │  │
-│  └────┬─────┘   └────┬─────┘   └────┬─────┘   └──────┬───────┘  │
-│       │              │              │                │          │
-│       └──────────────┼──────────────┼────────────────┘          │
-│                      ▼              ▼                           │
-│              ┌──────────────┐   ┌──────────────┐                │
-│              │ 统一 endpoint │   │ 模型映射表   │                │
-│              │  + 统一 key   │   │ (model mux)  │                │
-│              └──────────────┘   └──────────────┘                │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              │ agent-nexus 配置层
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Agent 运行时 (Coding Agents)                  │
-│                                                                  │
-│  codex  │ claude │ kimi │ deepseek │ opencode │ openclaw        │
-│  cursor │ codebuddy │ hermes │ kiro │ grok │ qoder │ trae      │
-│                                                                  │
-│  每个 agent 都有自己的配置格式（JSON/YAML/TOML/.env），             │
-│  agent-nexus 负责把它们全部指向同一个 AI 消息网关                    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          AI 消息网关 / Proxy                           │
+│                                                                      │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌──────────┐ │
+│  │ CCX Desktop │   │ CC-Switch   │   │ Sensitive   │   │ Custom   │ │
+│  │ 127.0.0.1   │   │ 127.0.0.1   │   │ Nova        │   │ /v1      │ │
+│  │ :3688/v1    │   │ :3688/v1    │   │             │   │          │ │
+│  └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └────┬─────┘ │
+│         │                 │                 │               │        │
+│         └─────────────────┼─────────────────┼───────────────┘        │
+│                           ▼                 ▼                        │
+│              ┌────────────────────┐   ┌──────────────┐              │
+│              │ 统一 endpoint+key   │   │  model mux   │              │
+│              └────────────────────┘   └──────────────┘              │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │
+                            │ agent-nexus 配置层（中间件）
+                            │ 发现 → 备份 → 重写 → 路由
+                            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      Coding Agent 运行时（被配置方）                     │
+│                                                                      │
+│  codex  │ claude │ kimi │ deepseek │ opencode │ openclaw            │
+│  cursor │ codebuddy │ hermes │ kiro │ grok │ qoder │ trae           │
+│                                                                      │
+│  各自有独立配置格式（JSON / YAML / TOML / .env）                       │
+│  agent-nexus 把它们的 base_url 全部重写为同一个 proxy                  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-- **AI 消息网关**（proxy）：统一的上游端点，负责模型路由和计费。你只需要关心"用哪个模型"，不需要关心"调哪个 API"。
-- **Agent 运行时**（agent）：你日常使用的 coding 工具。它们各有各的配置格式，但本质上都是"调一个 LLM endpoint"。
-- **agent-nexus** 是中间件：发现本机所有 agent → 检测代理 → 自动备份 → 统一重写配置文件。
+- **AI 消息网关**（proxy）：统一上游端点，负责模型路由、计费、限流。你只需要关心"用哪个模型"，不需要关心"调哪个 API"。
+- **Agent 运行时**（agent）：你日常使用的 coding 工具。各有配置格式，但本质上都是"调一个 LLM endpoint"。
+- **agent-nexus**：中间件。扫描本机 agent → 检测代理 → 自动备份 → 重写配置 → 建立模型路由。
 
 ---
 
 ## 一句话
 
-agent-nexus = AI 代理配置领域的 **`apt-get upgrade`**：
-一条命令，扫描本机所有 AI agent，把它们全部接入同一个代理。
+agent-nexus = **coding agent 配置领域的 `git rebase`**：
+一条命令，把散落在各处的 endpoint 和 key 全部重定向到同一个上游。
 
 详细使用方式见 [MANUAL.md](MANUAL.md)。
 
