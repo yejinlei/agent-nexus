@@ -26,6 +26,7 @@
 | deepseek | `~/.deepseek/config.toml` | CLI | OpenAI-compatible |
 | opencode | `~/.config/opencode/opencode.jsonc` | CLI | AI SDK |
 | openclaw | `~/.openclaw/openclaw.json` | CLI | Custom |
+| openclaude | `~/.openclaude-env` | CLI | OpenAI-compatible (.env) |
 | cursor | `Cursor/User/settings.json` | IDE | OpenAI-compatible |
 | codebuddy | `~/.codebuddy/settings.json` | CLI | Anthropic (Claude Code 兼容) |
 | hermes | `~/.hermes/config.yaml` | CLI | ACP |
@@ -165,6 +166,7 @@ flowchart LR
 | opencode | myccx/glm-5.2 | glm-5.2 | CCX 映射 |
 | cursor | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | 直连 |
 | openclaw | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| openclaude | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
 | codebuddy | fable | glm-5.2 | CCX 映射 |
 | hermes | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
 | kiro | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
@@ -261,6 +263,7 @@ agent-nexus/
     │   ├── deepseek.go              # DeepSeek CLI
     │   ├── opencode.go              # OpenCode
     │   ├── openclaw.go              # OpenClaw
+      ├── openclaude.go          # OpenClaude
     │   ├── cursor.go                # Cursor IDE
     │   ├── codebuddy.go             # CodeBuddy CLI (腾讯)
     │   ├── hermes.go                # Hermes (Nous Research)
@@ -324,6 +327,7 @@ writers: []ConfigWriter{
 - 配置快照存储于 `~/.codex/backups/`，使用 `agent-nexus version` 查看所有快照
 - 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
 - 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
+- **OpenClaude** 配置写入 `~/.openclaude-env` 文件（.env 格式），启动时需指定：`openclaude --provider-env-file ~/.openclaude-env`。也可设置系统环境变量 `CLAUDE_CODE_USE_OPENAI=1`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 后直接运行 `openclaude`
 
 ## License
 
