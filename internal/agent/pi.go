@@ -79,7 +79,7 @@ func (w *piWriter) Configure(path string, p *proxy.Proxy, model string) error {
 	// Add/update the "ccx" provider
 	modelsCfg.Providers["ccx"] = piProvider{
 		BaseURL: p.BaseURL,
-		API:     "openai",
+		API:     "openai-completions",
 		APIKey:  p.APIKey,
 		Models:  []piModelInfo{{ID: model, Reasoning: true, Input: []string{"text"}}},
 		Compat: &piCompat{
@@ -161,5 +161,7 @@ func (w *piWriter) StatusModel(path string) (model, source, notes string) {
 	}
 	return "", source, notes
 }
+
+
 
 
