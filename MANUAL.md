@@ -1,302 +1,192 @@
-﻿# agent-nexus 用户使用手册
+# agent-nexus 用户使用手册
 
-## 核心概念
+## 功能概览
 
-### 聚合网关（Proxy）
-CCX Desktop 作为本地代理服务器运行于 `127.0.0.1:3688`，上游连接 sensenova（`https://token.sensenova.cn`）。所有 agent 通过它统一访问 LLM 后端。
+- **自动发现**：扫描本机已安装的 AI agent（CLI 工具 + IDE）
+- **代理检测**：自动读取 CCX Desktop 配置（URL、Key、模型映射表），也支持任意自定义代理
+- **配置写入**：支持 `--url` / `--key` 全局选项，也可直接输入 URL 和 Key
+- **自动备份**：配置生效前自动创建版本化快照
+- **一键配置**：`agent-nexus configure --agents all` 完成完整流程
+- **模型路由**：三层模型重定向机制，匹配最佳后端
+- **版本化管理**：配置快照（snapshot）、分支（branch）、差异对比（diff）、回滚（restore）
+- **LLM 嗅探**：自动检测 LLM 提供商的消息格式和可用模型
+- **彩色输出**：终端彩色状态显示
 
-### Agent 配置
-每个 AI agent 有自己的配置文件（TOML / JSON / YAML），记录了 API 地址、Key 和模型名。
+---
 
-### 嗅探（Detect）
-工具自动读取 CCX Desktop 的 `config.json` 和 `.env` 文件，获取代理 URL、Key 和模型映射表。
+## 支持的 Agent
 
-### 配置快照（Snapshot）
-每次配置生效前，工具会自动创建版本化配置快照（类似 Git commit），存储原始配置和元数据。支持分支、差异对比和回滚，不再依赖单纯的目录备份。
+### 可配置（通过代理转发）
 
-```mermaid
-graph LR
-    A["原始配置"] --> B["agent-nexus configure"]
-    B --> C["创建快照<br/>(versioning.json)"]
-    B --> D["备份文件<br/>(snapshots/)"]
-    B --> E["写入新配置"]
-    E --> F["可配置的 agent"]
+| Agent | 配置文件 | 类型 | 协议 |
+|-------|---------|------|------|
+| codex | `~/.codex/config.toml` | CLI | OpenAI-compatible |
+| claude | `~/.claude/settings.json` | CLI | Anthropic |
+| kimi | `~/.kimi/config.toml` | CLI | ACP |
+| deepseek | `~/.deepseek/config.toml` | CLI | OpenAI-compatible |
+| opencode | `~/.config/opencode/opencode.jsonc` | CLI | AI SDK |
+| openclaw | `~/.openclaw/openclaw.json` | CLI | Custom |
+| openclaude | `~/.openclaude-env` | CLI | OpenAI-compatible (.env) |
+| cursor | `Cursor/User/settings.json` | IDE | OpenAI-compatible |
+| codebuddy | `~/.codebuddy/settings.json` | CLI | Anthropic (Claude Code 兼容) |
+| hermes | `~/.hermes/config.yaml` | CLI | ACP |
+| kiro | `~/.kiro/config.yaml` | CLI | ACP |
+| grok | `~/.grok/config.yaml` | CLI | ACP |
+| qoder | `~/.qoder/config.yaml` | CLI | ACP |
+| trae | `~/.traecli/config.yaml` | CLI | ACP |
+
+### 不可配置（无外部模型配置字段）
+
+| Agent | 类型 | 说明 |
+|-------|------|------|
+| antigravity | CLI | Google Gemini 服务，无外部模型配置字段 |
+| copilot | CLI | 模型由 GitHub 账户权益决定，无外部模型配置字段 |
+| devise | CLI | 基于 OpenCode 引擎，内置华为账号认证与自有模型目录 |
+| pi | CLI | Inflection AI 代理，无外部模型配置字段 |
+| qoder-ide | IDE | VS Code 派生，自有 AI 后端 |
+| trae-ide | IDE | VS Code 派生，自有 AI 后端 |
+| codebuddy-ide | IDE | VS Code 派生，自有 AI 后端 |
+| windsurf | IDE | VS Code 派生，自有 AI 后端 |
+| zed | IDE | 无内置 AI Agent，依赖外部工具 |
+
+---
+
+## 安装
+
+### 方式一：使用编译好的可执行文件
+
+直接下载 `agent-nexus.exe`，在终端运行：
+
+```powershell
+.gent-nexus.exe --help
 ```
+
+### 方式二：从源码编译
+
+```powershell
+go mod tidy
+go build -o agent-nexus.exe
+```
+
+---
 
 ## 快速开始
 
-### 用法 1：一键完整配置
+```powershell
+# 一键扫描 → 检测代理 → 创建快照 → 配置所有已安装的 agent
+agent-nexus configure --agents all
+```
+
+---
+
+## 代理支持
+
+agent-nexus 支持两种代理接入方式：
+
+### CCX Desktop（自动检测）
+
+自动读取 CCX Desktop 的配置文件（`~\AppData\Roaming\ccx-desktop\.config\config.json`）和 `.env` 文件，获取代理地址、Key 和模型映射表。CCX Desktop 需保持运行（默认监听 `127.0.0.1:3688`）。
+
+### CC-Switch（自动检测）
+
+自动读取 CC-Switch 的配置文件（`~\AppData\Roaming\cc-switch\.config\config.json`）和 `.env` 文件，获取代理地址、Key 和模型映射表。CC-Switch 需保持运行（默认监听 `127.0.0.1:3688`）。检测顺序：CCX Desktop → CC-Switch → 回退。
+
+### 自定义代理（手动指定）
 
 ```powershell
-.\agent-nexus.exe configure --agents all
+agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
+agent-nexus detect --url https://proxy.example.com/v1 --key abc123
+agent-nexus route --url http://my-local-proxy:9000/v1 --key mykey
+agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 ```
 
-完整流程：检测代理 → 扫描 agent → 创建快照 → 备份 → 配置所有已安装且可配置的 agent → 显示路由表。
+`--url` 和 `--key` 是全局选项，可覆盖自动检测，支持任意代理地址和密钥。`sniff` 命令还可自动检测自定义 LLM endpoint 的消息格式和可用模型列表。
 
-### 用法 2：手动指定代理
+### 代理类型
+
+| 代理类型 | 说明 |
+|---------|------|
+| CCX Desktop | 自动检测 CCX Desktop 配置（`~\AppData\Roaming\ccx-desktop`） |
+| CC-Switch | 自动检测 CC-Switch 配置（`~\AppData\Roaming\cc-switch`） |
+| 自定义代理 | 通过 `--url` + `--key` 手动指定任意代理地址 |
+| 本地代理 | 通过 `--url` 指定本地运行的代理（如 `http://127.0.0.1:8080/v1`） |
+
+> ⚠️ **每次配置仅支持一个代理**。agent-nexus 不支持同时配置多个代理，所有 agent 共享同一个代理地址。
+
+---
+
+## 命令参考
+
+```
+agent-nexus configure --agents <agents>   备份后自动配置指定的 agent（必选 --agents）
+agent-nexus discover [-v]                  扫描已安装的 agent（-v 显示模型详情）
+agent-nexus detect                         检测 CCX Desktop 代理配置
+agent-nexus status                         显示各 agent 当前配置状态
+agent-nexus route                          显示模型路由表
+agent-nexus backup [-b <branch>] [-m <msg>] 备份所有配置（创建快照）
+agent-nexus snapshot [-b <branch>] [-m <msg>] 创建命名快照
+agent-nexus version                        列出所有配置快照
+agent-nexus restore -s <id>                恢复到指定快照（支持 "latest"）
+agent-nexus diff --old <id> --new <id>     对比两个快照的差异
+agent-nexus branch                         管理配置分支（create / switch / list / show）
+agent-nexus sniff -u <url> -k <key> [-v]   嗅探 LLM 提供商的消息格式和可用模型
+```
+
+### 全局选项
+
+`--url` 和 `--key` 是全局选项，可用于所有命令，跳过自动嗅探直接指定代理地址和密钥：
 
 ```powershell
-.\agent-nexus.exe configure --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
+agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-xxx
+agent-nexus detect --url http://proxy:9000/v1 --key abc
+agent-nexus route --url http://proxy:9000/v1 --key abc
+agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 ```
 
-直接传入 URL 和 Key，跳过自动嗅探。
+---
 
-### 用法 3：只配置特定 agent
-
-```powershell
-.\agent-nexus.exe configure --agents claude,kimi
-```
-
-只配置 Claude 和 Kimi，跳过其他 agent。
-
-### 用法 4：查看当前状态
-
-```powershell
-.\agent-nexus.exe status
-.\agent-nexus.exe route
-```
-
-## 完整命令参考
-
-### configure — 备份后自动配置指定的 agent（必选 --agents）
-
-```powershell
-.\agent-nexus.exe configure --agents all
-.\agent-nexus.exe configure --agents claude,kimi
-.\agent-nexus.exe configure --agents all --url http://proxy:9000/v1 --key sk-xxx
-```
-
-流程：
-1. 检测 CCX Desktop 代理（或用 `--url`/`--key` 指定）
-2. 扫描已安装的 AI agent
-3. 创建配置快照（自动版本化）
-4. 备份现有配置（兼容旧格式）
-5. 逐个配置可配置的 agent
-6. 显示配置结果和模型路由表
-
-> ⚠️ **`--agents` 为必选参数**，不支持无参调用。使用 `all` 配置所有已安装的 agent，或用逗号分隔指定 agent 名称。
-
-### backup — 备份所有 agent 配置（自动版本化）
-
-```powershell
-.\agent-nexus.exe backup
-.\agent-nexus.exe backup --branch production
-.\agent-nexus.exe backup --message "配置更新前快照"
-.\agent-nexus.exe backup --branch pre-release --message "PR v2.0"
-```
-
-将所有 agent 配置文件备份到 `~/.codex/backups/snapshots/<时间戳>/`，元数据存储于 `versioning.json`。支持分支和提交信息。
-
-### snapshot — 创建命名快照
-
-```powershell
-.\agent-nexus.exe snapshot
-.\agent-nexus.exe snapshot --branch dev --message "开发分支配置"
-```
-
-创建命名快照，类似 `git commit`。快照包含所有可配置 agent 的当前配置内容和元数据。
-
-### version — 列出所有配置快照
-
-```powershell
-.\agent-nexus.exe version
-```
-
-显示所有历史配置快照，包括时间戳、分支、提交信息和包含的文件。最新快照标记为 `◀`。
-
-### restore — 恢复到指定快照
-
-```powershell
-.\agent-nexus.exe restore --snapshot latest
-.\agent-nexus.exe restore --snapshot 2026-07-17_14-30-00
-```
-
-从指定的历史快照恢复 agent 配置文件。支持 `latest` 恢复最新快照。
-
-> 先使用 `agent-nexus version` 查看所有可用快照 ID。
-
-### diff — 对比两个快照的差异
-
-```powershell
-.\agent-nexus.exe diff --old 2026-07-17_14-30-00 --new 2026-07-17_15-00-00
-.\agent-nexus.exe diff --old latest --new 2026-07-17_14-30-00
-```
-
-比较两个版本快照之间的配置变更，显示新增、删除和修改的文件。
-
-### branch — 管理配置分支
-
-```powershell
-.\agent-nexus.exe branch                        # 列出所有分支
-.\agent-nexus.exe branch create production       # 创建生产分支
-.\agent-nexus.exe branch switch production       # 切换到生产分支
-.\agent-nexus.exe branch show                    # 显示当前分支信息
-```
-
-### discover — 扫描已安装的 agent
-
-```powershell
-.\agent-nexus.exe discover                     # 摘要表（agent 名称/状态）
-.\agent-nexus.exe discover -v                  # 详细表（含模型支持详情）
-```
-
-列出所有已扫描到的 AI agent 及其配置文件路径。`-v` 详细模式还会显示各 agent 的默认模型、路由目标和模型来源。
-
-### detect — 检测代理配置
-
-```powershell
-.\agent-nexus.exe detect
-.\agent-nexus.exe detect --url http://proxy:9000/v1 --key sk-xxx
-```
-
-读取 CCX Desktop 配置并输出代理地址、Key 和模型映射表。
-
-### status — 显示各 agent 状态
-
-```powershell
-.\agent-nexus.exe status
-```
-
-输出每个 agent 的安装状态和配置状态：
-- 🔗 已配置代理
-- ⚙️ 已安装但未配置代理
-- ❌ 未安装
-
-### route — 显示模型路由表
-
-```powershell
-.\agent-nexus.exe route
-```
-
-显示三层模型路由：各 agent 的写入模型 → 实际后端模型，以及 CCX 自动映射表。
-
-### sniff — 嗅探 LLM 提供商消息格式与模型
-
-```powershell
-.\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
-.\agent-nexus.exe sniff --url http://127.0.0.1:8080/v1 --key sk-xxx
-```
-
-嗅探指定的 LLM provider endpoint，自动检测其支持的消息格式（如 OpenAI 兼容协议等）和可用模型列表。
-
-探测流程：
-1. `/v1/models` — 获取可用模型列表
-2. `/v1/chat/completions` — 验证 OpenAI 格式兼容性
-3. `/v1/messages` — 验证 Anthropic Messages API 兼容性
-
-基础模式输出示例：
-
-```
-正在嗅探 LLM endpoint: https://token.sensenova.cn/v1
-
-  Endpoint: https://token.sensenova.cn/v1
-  支持格式: OpenAI models API / OpenAI chat completions / Anthropic Messages API
-
-  可用模型 (4):
-    - sensenova-6.7-flash-lite
-    - deepseek-v4-flash
-    - glm-5.2
-    - sensenova-u1-fast
-```
-
-`-v` / `--verbose` 详细模式还会显示每个模型的完整信息和能力推断：
-
-```
-可用模型 (4):
-  sensenova-6.7-flash-lite
-    context:262144, max_output:65536, input:[text image], output:[text]
-    features:[tools json_mode reasoning], quant:fp8
-    描述: SenseNova 6.7 Flash-Lite is a lightweight multimodal agent model...
-    pricing: map[completion:0 image:0 input_cache_read:0 prompt:0 request:0]
-    supported_features: [tools json_mode reasoning]
-
-  deepseek-v4-flash
-    context:1048576, max_output:65536, input:[text], output:[text]
-    features:[tools json_mode reasoning], quant:fp8
-    描述: DeepSeek V4 Flash is a high-performance conversational model...
-```
-
-支持显示的模型字段：`context_length`、`max_output_length`、`input_modalities`、`output_modalities`、`supported_features`、`quantization`、`description`、`pricing`、`datacenters`、`businesses` 等。
-
-### install — 安装/卸载/更新 agent 运行时
-
-```powershell
-# 显示可安装的 agent 列表
-.gent-nexus.exe install list
-
-# 安装指定 agent（自动选择平台）
-.gent-nexus.exe install codex
-.gent-nexus.exe install claude
-.gent-nexus.exe install kimi
-
-# 安装全部 CLI agent
-.gent-nexus.exe install --all
-
-# 卸载指定 agent
-.gent-nexus.exe install uninstall codex
-.gent-nexus.exe install uninstall claude
-
-# 更新指定 agent
-.gent-nexus.exe install update codex
-.gent-nexus.exe install update deepseek
-```
-
-支持 15 个 agent 运行时，覆盖 Windows、Linux、macOS 三个平台。
-
-| agent | 类型 | 安装方式 | 说明 |
-|-------|------|----------|------|
-| codex | CLI | npm install -g @openai/codex | Anthropic Codex CLI |
-| claude | CLI | npm install -g @anthropic-ai/claude-code | Anthropic Claude CLI |
-| kimi | CLI | 直接下载 | Kimi CLI (ACP) |
-| deepseek | CLI | 直接下载 | DeepSeek TUI |
-| opencode | CLI | 直接下载 | OpenCode CLI |
-| openclaw | CLI | 直接下载 | OpenClaw CLI |
-| cursor | IDE | 直接下载 | Cursor IDE |
-| codebuddy | CLI | 直接下载 | CodeBuddy CLI |
-| hermes | CLI | 直接下载 | Hermes CLI (ACP) |
-| kiro | CLI | 直接下载 | Kiro CLI (ACP) |
-| grok | CLI | 直接下载 | Grok CLI (ACP) |
-| qoder | CLI | 直接下载 | Qoder CLI (ACP) |
-| trae | CLI | 直接下载 | Trae CLI (ACP) |
-| lmstudio | CLI | npm install -g lmstudio | LM Studio CLI |
-| clawx | IDE | 直接下载 | ClawX IDE |
-
-卸载说明：
-- npm 包：自动显示 `npm uninstall -g <package>` 命令
-- 直接下载：提示手动删除二进制文件（因为无法确定安装路径）
-
-更新说明：
-- npm 包：重新安装即可更新（`npm install -g <package>`）
-- 直接下载：重新下载覆盖原文件
-\n## 工作流程
+## 模型路由（三层机制）
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant Tool as agent-nexus
-    participant Proxy as CCX Desktop 代理
-    participant Backend as sensenova 后端
-    participant FS as 文件系统
-
-    User->>Tool: agent-nexus configure --agents all
-    Tool->>Proxy: 检测代理配置（--url/--key 或自动嗅探）
-    Proxy-->>Tool: URL / Key / 模型映射表
-    Tool->>FS: 扫描已安装的 agent
-    FS-->>Tool: agent 列表 + 配置文件路径
-    Tool->>FS: 创建配置快照
-    FS-->>Tool: 快照 ID
-    Tool->>FS: 备份现有配置
-    FS-->>Tool: 备份完成
-    Tool->>FS: 逐个配置可配置的 agent
-    FS-->>Tool: 配置结果（成功/跳过）
-    Tool-->>User: 显示配置结果 + 模型路由表
-    User->>Backend: 使用 agent 调用 LLM
-    Backend-->>User: 响应
+flowchart LR
+    A["Agent 传入<br/>模型名"] --> B["第一层<br/>CCX Desktop 自动映射"]
+    B --> C["第二层<br/>写入器默认模型"]
+    C --> D["第三层<br/>DeepSeek CLI 直连<br/>（注释保留）"]
+    D --> E["实际后端<br/>sensenova / glm"]
 ```
 
-## 配置快照与版本化
+**第一层：CCX Desktop 自动映射** — Agent 传入模型名（如 `gpt-5.5`），CCX 自动映射到实际后端模型
 
-agent-nexus 使用类似 Git 的配置版本管理系统：
+**第二层：写入器默认模型** — agent-nexus 写入各 agent 配置文件时使用的默认模型名
+
+| Agent | 写入模型 | → 实际后端 | 来源 |
+|-------|---------|-----------|------|
+| codex | gpt-5.5 | sensenova-6.7-flash-lite | CCX 映射 |
+| claude | fable | glm-5.2 | CCX 映射 |
+| kimi | gpt-5.5 | sensenova-6.7-flash-lite | CCX 映射 |
+| deepseek | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | 直连 |
+| opencode | myccx/glm-5.2 | glm-5.2 | CCX 映射 |
+| cursor | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | 直连 |
+| openclaw | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| openclaude | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| codebuddy | fable | glm-5.2 | CCX 映射 |
+| hermes | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| kiro | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| grok | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| qoder | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+| trae | sensenova-6.7-flash-lite | sensenova-6.7-flash-lite | CCX 映射 |
+
+**第三层：DeepSeek CLI 备选直连** — 配置中保留 sensenova 直连方案（注释形式）
+
+### 模型来源说明
+
+所有可配置 agent 均通过 OpenAI 兼容协议接入，支持自定义模型名。用户可通过 CCX Desktop 的模型重定义（model redefinition）将自定义模型名映射到后端实际模型。
+
+---
+
+## 配置快照与版本化管理
+
+agent-nexus 引入类似 Git 的配置版本管理系统，支持快照、分支、差异对比和回滚：
 
 ```mermaid
 graph TD
@@ -310,12 +200,14 @@ graph TD
 | 命令 | 功能 |
 |------|------|
 | `snapshot` | 创建命名快照，类似 `git commit` |
-| `version` | 列出所有快照（版本历史） |
-| `diff --old A --new B` | 对比两个快照的差异 |
+| `version` | 列出所有快照（版本历史），显示分支、时间、信息、文件列表 |
+| `diff --old A --new B` | 对比两个快照的差异（新增 / 删除 / 修改 / 未变） |
 | `restore -s <id>` | 恢复到指定快照，支持 `latest` |
 | `branch create <name>` | 创建新分支 |
 | `branch switch <name>` | 切换到指定分支 |
-| `backup` | 兼容旧格式的备份（自动版本化） |
+| `branch list` | 列出所有分支 |
+| `branch show` | 显示当前分支信息 |
+| `backup` | 兼容旧格式的备份（自动版本化，默认 `main` 分支） |
 
 ### 快照存储结构
 
@@ -328,80 +220,70 @@ graph TD
     └── ...
 ```
 
-## 典型使用场景
+---
 
-### 场景 1：首次使用
-```powershell
-.\agent-nexus.exe configure --agents all
+## 工作流程
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Tool as agent-nexus
+    participant Proxy as LLM 代理<br/>(CCX Desktop 或自定义)
+    participant Backend as 后端模型
+    participant FS as 文件系统/备份
+
+    User->>Tool: agent-nexus configure --agents all
+    Tool->>Proxy: 检测代理配置（--url/--key 或自动嗅探）
+    Proxy-->>Tool: URL / Key / 模型映射表
+    Tool->>FS: 扫描已安装的 agent
+    FS-->>Tool: agent 列表 + 配置文件路径
+    Tool->>FS: 创建配置快照（versioning.json + snapshots/）
+    FS-->>Tool: 快照 ID
+    Tool->>FS: 备份现有配置
+    FS-->>Tool: 备份完成
+    Tool->>FS: 逐个配置可配置的 agent
+    FS-->>Tool: 配置结果（成功/跳过）
+    Tool-->>User: 显示配置结果 + 模型路由表
+    User->>Backend: 使用 agent 调用 LLM
+    Backend-->>User: 响应
 ```
 
-### 场景 2：更换代理地址
-```powershell
-.\agent-nexus.exe configure --agents all --url http://127.0.0.1:9000/v1 --key new-key
+---
+
+## 扩展新 Agent
+
+实现 `agent.ConfigWriter` 接口并注册到 `WriterRegistry` 即可：
+
+```go
+type myAgentWriter struct{}
+
+func newMyAgentWriter() *myAgentWriter { return &myAgentWriter{} }
+
+func (w *myAgentWriter) Name() string     { return "myagent" }
+func (w *myAgentWriter) Category() string { return "cli" }
+func (w *myAgentWriter) CanConfigure(p *proxy.Proxy) bool { return true }
+func (w *myAgentWriter) Configure(path string, p *proxy.Proxy) error { /* 写入逻辑 */ }
+func (w *myAgentWriter) Status(path string) (bool, string) { /* 状态检测 */ }
 ```
 
-### 场景 3：只查看状态（不修改）
-```powershell
-.\agent-nexus.exe status
-.\agent-nexus.exe route
+然后在 `agent.go` 的 `NewWriterRegistry()` 中注册：
+
+```go
+writers: []ConfigWriter{
+    // ... 现有写入器
+    newMyAgentWriter(),
+},
 ```
 
-### 场景 4：只备份（不配置）
-```powershell
-.\agent-nexus.exe backup
-.\agent-nexus.exe snapshot --message "手动备份"
-```
+---
 
-### 场景 5：回滚到之前的配置
-```powershell
-.\agent-nexus.exe version                           # 查看所有快照
-.\agent-nexus.exe restore --snapshot latest         # 回滚到最新快照
-.\agent-nexus.exe diff --old latest --new 2026-07-17_14-30-00  # 查看差异
-```
+## 注意事项
 
-### 场景 6：管理配置分支
-```powershell
-.\agent-nexus.exe branch create production
-.\agent-nexus.exe snapshot --branch production --message "生产环境配置"
-.\agent-nexus.exe branch switch production
-.\agent-nexus.exe configure --agents all
-```
-
-### 场景 7：嗅探新 LLM 提供商
-```powershell
-.\agent-nexus.exe sniff --url https://token.sensenova.cn/v1 --key sk-xxx
-```
-
-## 彩色输出含义
-
-| 符号 | 含义 |
-|------|------|
-| ✅ | agent 已安装 |
-| 🔗 | agent 已配置代理 |
-| ⚙️ | agent 已安装但未配置代理 |
-| ❌ | agent 未安装 |
-| ⚠ | 无法配置（使用自有 AI 后端） |
-
-## 故障排查
-
-### 配置失败：无法连接到代理
-确保 CCX Desktop 正在运行（`127.0.0.1:3688`）。
-
-### 配置失败：API Key 无效
-检查 CCX Desktop 的 `.env` 文件中 `PORT=` 和 `API_KEY=` 设置。
-
-### Cursor 配置不生效
-Cursor 的字段名取决于版本。如果自动配置无效，请通过 Cursor 设置 UI → OpenAI Compatible 手动填入相同的 base URL 和 key。
-
-### 配置快照找不到
-使用 `agent-nexus version` 查看所有可用快照 ID。快照存储于 `~/.codex/backups/`。
-
-### 回滚配置
-使用 `agent-nexus restore --snapshot latest` 恢复到最新快照，或使用 `agent-nexus diff` 查看两个快照之间的差异后再选择目标快照。
-
-## 安全注意事项
-
-- API Key 仅写入各 agent 自身的配置文件，不会扩散到其他地方
-- 配置文件均为本地文件，不上传网络
-- 备份和快照目录仅本地存储，不对外暴露
-- `--url` 和 `--key` 全局选项仅用于本次命令，不会写入任何文件
+- CCX Desktop 需保持运行（监听 `127.0.0.1:3688`），或使用 `--url` 指定自定义代理
+- Cursor 的字段名取决于版本，不匹配时需通过 Cursor 设置 UI 手动填入
+- `configure` 命令 **必须** 指定 `--agents` 参数（`all` 或逗号分隔的 agent 名称）
+- **每次配置仅支持一个代理**，所有 agent 共享同一个代理地址
+- 配置快照存储于 `~/.codex/backups/`，使用 `agent-nexus version` 查看所有快照
+- 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
+- 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
+- **OpenClaude** 配置写入 `~/.openclaude-env` 文件（.env 格式），启动时需指定：`openclaude --provider-env-file ~/.openclaude-env`。也可设置系统环境变量 `CLAUDE_CODE_USE_OPENAI=1`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 后直接运行 `openclaude`
