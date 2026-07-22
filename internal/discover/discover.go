@@ -47,6 +47,7 @@ var protocolMap = map[string]string{
     "deepseek":      ProtocolOpenAI,
     "opencode":      ProtocolOpenAI,
     "openclaw":      ProtocolOpenAI,
+    "openclaude":    ProtocolOpenAI,
     "cursor":        ProtocolOpenAI,
     "codebuddy":     ProtocolOpenAI,
     "hermes":        ProtocolACP,
@@ -65,9 +66,7 @@ var protocolMap = map[string]string{
     "zed":           ProtocolNone,
     "lmstudio":      ProtocolOpenAI,
     "clawx":         ProtocolOpenAI,
-    "gemini":      ProtocolNone,
-
-
+    "gemini":        ProtocolNone,
 }
 
 var registry = AgentRegistry{
@@ -78,6 +77,7 @@ var registry = AgentRegistry{
         {Name: "deepseek", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
         {Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, IsConfigurable: true},
         {Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, IsConfigurable: true},
+        {Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
         {Name: "cursor", Category: "ide", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Cursor/User/settings.json"}, IsConfigurable: true},
         {Name: "codebuddy", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
         {Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".hermes/config.yaml"}, IsConfigurable: true},
@@ -420,6 +420,7 @@ func agentDefaultModel(name string) string {
         "opencode":  "myccx/glm-5.2",
         "cursor":    "sensenova-6.7-flash-lite",
         "openclaw":  "sensenova-6.7-flash-lite",
+        "openclaude": "sensenova-6.7-flash-lite",
         "codebuddy": "fable",
         "hermes":    "sensenova-6.7-flash-lite",
         "kiro":      "sensenova-6.7-flash-lite",
@@ -450,5 +451,3 @@ func maxStrWidth(strs []string) int {
     }
     return maxW
 }
-
-

@@ -19,6 +19,7 @@ func defaultModelInfo(agentName string) (model string, source string, notes stri
 		"opencode":  {"myccx/glm-5.2", "default"},
 		"cursor":    {"sensenova-6.7-flash-lite", "default"},
 		"openclaw":  {"sensenova-6.7-flash-lite", "default"},
+		"openclaude":{"sensenova-6.7-flash-lite", "default"},
 		"codebuddy": {"fable", "proxy-map"},
 		"hermes":    {"sensenova-6.7-flash-lite", "default"},
 		"kiro":      {"sensenova-6.7-flash-lite", "default"},

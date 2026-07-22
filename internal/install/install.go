@@ -93,6 +93,16 @@ var registry = []Agent{
 		Notes:     "OpenClaw CLI — JSON config with model providers",
 	},
 	{
+		Name:      "openclaude",
+		Display:   "OpenClaude",
+		Category:  "cli",
+		NpmPackage: "@gitlawb/openclaude",
+		UninstallPaths: []string{".openclaude"},
+		Download:  map[string]string{},
+		Protocol:  "openai",
+		Notes:     "OpenClaude CLI — npm install, openai-compatible provider",
+	},
+	{
 		Name:      "cursor",
 		Display:   "Cursor (IDE)",
 		Category:  "ide",
@@ -272,7 +282,8 @@ func CurrentPlatform() string {
 		return PlatformDarwin
 	default:
 		return PlatformLinux
-	}}
+	}
+}
 
 // IsCLI checks if the current platform is CLI-capable (not IDE-only)
 func (a Agent) IsCLI() bool {

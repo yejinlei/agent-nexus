@@ -42,6 +42,10 @@ func NewWriterRegistry() *WriterRegistry {
 
 			// Pi (JSON-based config)
 			newPiWriter(),
+
+			// OpenClaude (TOML-based config, similar to Codex)
+			// Note: newOpenClaudeWriter() is imported from openclaude.go
+			newOpenClaudeWriter(),
 		},
 	}
 }
@@ -58,5 +62,3 @@ func (r *WriterRegistry) Get(name string) ConfigWriter {
 func (r *WriterRegistry) All() []ConfigWriter {
 	return r.writers
 }
-
-
