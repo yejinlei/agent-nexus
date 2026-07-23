@@ -324,7 +324,7 @@ func TestWriterConfigure_NonexistentFile(t *testing.T) {
 		p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
 		// Each writer uses its own path
 		tmp := t.TempDir()
-		err := w.Configure(filepath.Join(tmp, writerName+".toml"), p)
+		err := w.Configure(filepath.Join(tmp, writerName+".toml"), p, "")
 		if err != nil {
 			t.Errorf("Configure(%s) should succeed creating new file", writerName)
 		}

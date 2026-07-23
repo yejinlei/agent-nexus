@@ -18,7 +18,7 @@ $ ps aux | grep -E 'codex|claude|kimi|deepseek|cursor'
 
 ## 架构
 
-![agent-nexus architecture](docs/architecture.svg)
+![agent-nexus 架构](docs/architecture.svg)
 
 - **AI 消息网关**（proxy）：统一上游端点，负责模型路由、计费、限流。你只需要关心"用哪个模型"，不需要关心"调哪个 API"。
 - **Agent 运行时**（agent）：你日常使用的 coding 工具。各有配置格式，但本质上都是"调一个 LLM endpoint"。
@@ -29,6 +29,24 @@ $ ps aux | grep -E 'codex|claude|kimi|deepseek|cursor'
 ## 一句话
 
 agent-nexus = **coding agent 配置领域的 `git rebase`**：一条命令，把散落在各处的 endpoint 和 key 全部重定向到同一个上游。
+
+---
+
+## 工作流：从安装到多 Agent 协作
+
+![agent-nexus 工作流全景](docs/flowchart.svg)
+
+一条完整的自动化链路：
+
+| 阶段 | 动作 | 命令 |
+|------|------|------|
+| **① 安装 Agent 运行时** | 一键安装 codex/claude/kimi 等 19 个 agent | `agent-nexus agent list/install/uninstall/update` |
+| **② agent-nexus 自动配置** | 扫描 → 检测代理 → 备份 → 配置 → 模型路由 | `agent-nexus conf bak`（一键完成） |
+| **③ 多 Agent 协作平台** | Multica、Orca、cursor 等平台复用已配置 agent | 无需额外配置，直接使用 |
+
+**agent-nexus 的位置**：中间件 / 配置中枢。所有 agent 运行时的安装和配置都通过它完成，所有下游协作平台只需调用已配置好的 agent 即可——无需每个平台各自配置代理、Key、模型映射。
+
+> 详细用法见 [MANUAL.md](MANUAL.md)。
 
 ---
 

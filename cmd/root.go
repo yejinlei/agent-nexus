@@ -6,6 +6,7 @@ import (
     "os/exec"
     "path/filepath"
     "runtime"
+    "sort"
     "strings"
     "time"
 
@@ -13,6 +14,8 @@ import (
     "agent-nexus/internal/db"
     "agent-nexus/internal/discover"
     "agent-nexus/internal/install"
+    "agent-nexus/internal/backup"
+    "agent-nexus/internal/agent"
     "agent-nexus/internal/model"
     "agent-nexus/internal/proxy"
     "agent-nexus/internal/sniff"
@@ -50,6 +53,7 @@ var rootCmd = &cobra.Command{
   agent-nexus agent install <name>  安装 agent 运行时
   agent-nexus agent uninstall <name> 卸载指定 agent
   agent-nexus agent update <name>   更新指定 agent
+  agent-nexus agent configure --agents all  配置所有已安装 agent
   agent-nexus proxy detect          检测 AI 代理配置
   agent-nexus proxy route           显示模型路由表
   agent-nexus proxy sniff           嗅探 LLM 提供商消息格式与模型
@@ -98,7 +102,7 @@ func getProxySettings() (*proxy.Proxy, error) {
 
 var agentCmd = &cobra.Command{
     Use:   "agent",
-    Short: "Agent 管理（发现、安装、卸载、更新）",
+    Short: "Agent 管理（发现、安装、卸载、更新、配置）",
     Long: `Agent 管理命令组，用于发现本机已安装的 AI agent、安装/卸载/更新 agent 运行时。
 
 子命令：
@@ -107,6 +111,7 @@ var agentCmd = &cobra.Command{
   install   安装指定 agent
   uninstall 卸载指定 agent
   update    更新指定 agent
+  configure 配置 agent（需 --agents，先备份再写入）
 `,
 }
 
@@ -471,17 +476,263 @@ var agentUpdateCmd = &cobra.Command{
     },
 }
 
+var (
+    configureAgents string
+    configureModels string
+)
+
+var agentConfigureCmd = &cobra.Command{
+    Use:   "configure --agents <agent1[,agent2,...]|all>",
+    Short: "备份后配置指定 agent（需 --agents）",
+    Long: `配置指定 agent 运行时，先自动备份，再写入 AI 代理配置。
+
+必选参数:
+  --agents  要配置的 agent（逗号分隔），或用 all 配置所有已安装 agent
+
+可选参数:
+  --models  覆盖模型映射，格式: "agent=模型名,agent2=模型名"
+
+配置前自动创建快照，支持回滚。
+
+示例:
+  agent-nexus agent configure --agents all
+  agent-nexus agent configure --agents claude,kimi
+  agent-nexus agent configure --agents codex
+  agent-nexus agent configure --agents all --models "codex=gpt-5.5"
+`,
+    RunE: func(cmd *cobra.Command, args []string) error {
+        if configureAgents == "" {
+            return fmt.Errorf("--agents 为必选参数，使用 all 配置所有已安装 agent")
+        }
+
+        home := userHomeDir()
+        destRoot := filepath.Join(home, ".codex", "backups")
+
+        fmt.Println("[1/6] 检测 AI 代理...")
+        p, err := getProxySettings()
+        if err != nil {
+            fmt.Printf("未检测到 AI 代理配置: %v\n", err)
+            fmt.Println("请确保 AI 代理已安装并运行，或使用 --url / --key 指定")
+            return err
+        }
+        fmt.Printf("  代理类型: %s  地址: %s\n", p.Source, p.BaseURL)
+        fmt.Println()
+
+        fmt.Println("  正在获取上游模型列表...")
+        upstreamModels := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+        if len(upstreamModels) > 0 {
+            fmt.Printf("  上游可用模型 (%d)\n", len(upstreamModels))
+        } else {
+            fmt.Println("  无法获取上游模型列表（将使用代理模型映射）")
+        }
+        fmt.Println()
+
+        fmt.Println("[2/6] 扫描已安装 agent...")
+        agents := discover.Discover()
+        fmt.Printf("  发现 %d 个 agent\n\n", len(agents))
+
+        var selectedNames []string
+        if strings.EqualFold(configureAgents, "all") {
+            for _, a := range agents {
+                if a.HasConfig && a.IsConfigurable {
+                    selectedNames = append(selectedNames, a.Name)
+                }
+            }
+        } else {
+            selectedNames = strings.Split(configureAgents, ",")
+            for i, n := range selectedNames {
+                selectedNames[i] = strings.TrimSpace(n)
+            }
+            seen := map[string]bool{}
+            var deduped []string
+            for _, n := range selectedNames {
+                if !seen[n] {
+                    seen[n] = true
+                    deduped = append(deduped, n)
+                }
+            }
+            selectedNames = deduped
+        }
+        sort.Strings(selectedNames)
+        fmt.Printf("  目标 agent: %s\n\n", strings.Join(selectedNames, ", "))
+
+        nameToAgent := map[string]discover.AgentInfo{}
+        for _, a := range agents {
+            nameToAgent[a.Name] = a
+        }
+
+        var toConfigure []discover.AgentInfo
+        for _, name := range selectedNames {
+            a, ok := nameToAgent[name]
+            if !ok {
+                fmt.Printf("  %s: 未检测到该 agent，跳过\n", name)
+                continue
+            }
+            if !a.HasConfig {
+                fmt.Printf("  %s: 未安装，跳过\n", name)
+                continue
+            }
+            if !a.IsConfigurable {
+                fmt.Printf("  %s: 不可配置，跳过\n", name)
+                continue
+            }
+            toConfigure = append(toConfigure, a)
+        }
+
+        if len(toConfigure) == 0 {
+            fmt.Println("\n没有可配置的 agent，退出。")
+            return nil
+        }
+
+        fmt.Println("[3/6] 解析模型映射...")
+        resolutions := model.ResolveAllModels(upstreamModels, p.ModelMap)
+        fmt.Println()
+
+        overrides := make(map[string]string)
+        if configureModels != "" {
+            for _, pair := range strings.Split(configureModels, ",") {
+                pair = strings.TrimSpace(pair)
+                if idx := strings.Index(pair, "="); idx > 0 {
+                    agt := strings.TrimSpace(pair[:idx])
+                    m := strings.TrimSpace(pair[idx+1:])
+                    if m != "" {
+                        overrides[agt] = m
+                    }
+                }
+            }
+        }
+
+        fmt.Println("  模型映射预览:")
+        fmt.Printf("  %-14s %-30s [%s]\n", "Agent", "模型", "来源")
+        fmt.Println(strings.Repeat("-", 70))
+        for _, r := range resolutions {
+            displayModel := r.Model
+            src := r.Source
+            if ov, ok := overrides[r.Agent]; ok {
+                displayModel = ov
+                src = "override"
+            }
+            if src == "upstream" {
+                src = "上游直接"
+            } else if src == "proxy-map" {
+                src = "代理重定向"
+            } else if src == "default" {
+                src = "默认"
+            }
+            fmt.Printf("  %-14s %-30s [%s]\n", r.Agent, displayModel, src)
+            if r.Notes != "" {
+                fmt.Printf("     %s\n", r.Notes)
+            }
+        }
+        fmt.Println()
+
+        fmt.Println("[4/6] 创建配置快照...")
+        reg := versioning.LoadRegistry(destRoot)
+        var snapshotPaths []string
+        for _, a := range toConfigure {
+            if a.HasConfig {
+                snapshotPaths = append(snapshotPaths, a.ConfigPath)
+            }
+        }
+        _, err = reg.CreateSnapshot(snapshotPaths, fmt.Sprintf("自动配置快照: %s", strings.Join(selectedNames, ",")), "")
+        if err != nil {
+            fmt.Printf("  快照创建失败: %v\n", err)
+        } else {
+            fmt.Printf("  快照已创建（可在配置失败时回滚）\n")
+        }
+        fmt.Println()
+
+        fmt.Println("[5/6] 备份现有配置...")
+        var backupPaths []string
+        for _, a := range toConfigure {
+            if a.HasConfig {
+                backupPaths = append(backupPaths, a.ConfigPath)
+            }
+        }
+        if len(backupPaths) > 0 {
+            results, err := backup.Backup(backupPaths, filepath.Join(home, ".codex"))
+            if err != nil {
+                fmt.Printf("  备份失败: %v\n", err)
+            } else {
+                for _, result := range results {
+                    if result.Success {
+                        fmt.Printf("  %s\n", filepath.Base(result.Source))
+                    }
+                }
+            }
+        }
+        fmt.Println()
+
+        fmt.Println("[6/6] 配置 agent...")
+        writerReg := agent.NewWriterRegistry()
+        configured := 0
+        skipped := 0
+
+        for _, a := range toConfigure {
+            writer := writerReg.Get(a.Name)
+            if writer == nil {
+                fmt.Printf("  %s: 无对应配置写入器\n", a.Name)
+                skipped++
+                continue
+            }
+            if !writer.CanConfigure(p) {
+                fmt.Printf("  %s: 当前代理不支持配置\n", a.Name)
+                skipped++
+                continue
+            }
+
+            resolvedModel, found := model.ModelToWrite(resolutions, overrides, a.Name)
+            if !found {
+                resolvedModel = ""
+            }
+
+            err := writer.Configure(a.ConfigPath, p, resolvedModel)
+            if err != nil {
+                fmt.Printf("  %s: %v\n", a.Name, err)
+                fmt.Println("  提示: 使用 'agent-nexus conf rollback -s latest' 回滚")
+                skipped++
+            } else {
+                wmodel, wsrc, wnotes := writer.StatusModel(a.ConfigPath)
+                _, status := writer.Status(a.ConfigPath)
+                fmt.Printf("  %s  %s [%s: %s]\n", a.Name, status, wmodel, wsrc)
+                if wnotes != "" {
+                    fmt.Printf("     %s\n", wnotes)
+                }
+                configured++
+            }
+        }
+
+        fmt.Printf("\n配置完成: %d 个 agent 已配置, %d 个跳过\n", configured, skipped)
+        if skipped > 0 {
+            fmt.Println("如需回滚: agent-nexus conf rollback -s latest")
+        }
+
+        fmt.Println("\n更新后模型路由表:")
+        routing := model.BuildRoutingTable(p)
+        for _, r := range routing {
+            fmt.Printf("  %-10s %-30s  %-30s [%s]\n", r.Agent, r.Model, r.Target, r.Source)
+        }
+        fmt.Println()
+        return nil
+    },
+}
+
 func initAgentCmd() {
     agentDiscoverCmd.Flags().BoolVarP(&discoverVerbose, "verbose", "v", false, "显示 agent 支持的所有模型及模型来源（自定义 vs. 模型重定义）")
     agentInstallCmd.Flags().BoolVarP(&installAll, "all", "a", false, "安装全部 CLI agent")
     agentInstallCmd.Flags().BoolVarP(&installExecute, "execute", "e", true, "直接执行安装命令")
     agentInstallCmd.Flags().BoolVar(&installForce, "force", false, "强制安装")
 
+    agentConfigureCmd.Flags().StringVar(&configureAgents, "agents", "", "要配置的 agent 名称（逗号分隔），用 all 表示配置所有")
+    agentConfigureCmd.MarkFlagRequired("agents")
+    agentConfigureCmd.Flags().StringVar(&configureModels, "models", "", "覆盖模型映射，格式: agent=模型名，agent2=模型名")
+
     agentCmd.AddCommand(agentDiscoverCmd)
     agentCmd.AddCommand(agentListCmd)
     agentCmd.AddCommand(agentInstallCmd)
     agentCmd.AddCommand(agentUninstallCmd)
     agentCmd.AddCommand(agentUpdateCmd)
+    agentCmd.AddCommand(agentConfigureCmd)
 }
 
 // ========== PROXY GROUP ==========
@@ -891,8 +1142,8 @@ var confBakCmd = &cobra.Command{
                 fmt.Printf("  ⚠ %s: %s\n", filepath.Base(p), entry.Error)
                 continue
             }
-            fmt.Printf("  ✅ %s  [%s, %d bytes, sha256=%s...]\n",
-                filepath.Base(p), entry.SHA256[:8], entry.Bytes, entry.SHA256[:8])
+            fmt.Printf("  ✅ %s  [%s, %d bytes]\n",
+                filepath.Base(p), entry.SHA256[:8], entry.Bytes)
         }
         fmt.Printf("\n消息: %s\n", s.Message)
         fmt.Printf("快照数: %d\n", len(r.ListSnapshots()))
@@ -1004,7 +1255,7 @@ var confShowCmd = &cobra.Command{
                 fmt.Printf("  ⚠ %s: %s\n", filepath.Base(p), entry.Error)
                 continue
             }
-            fmt.Printf("  ✅ %s [%s, %d bytes]\n", filepath.Base(p), entry.SHA256[:8], entry.Bytes, entry.SHA256[:8])
+            fmt.Printf("  ✅ %s [%s, %d bytes]\n", filepath.Base(p), entry.SHA256[:8], entry.Bytes)
         }
         fmt.Printf("\n提交信息: %s\n", s.Message)
         fmt.Printf("总快照数: %d\n", len(r.ListSnapshots()))
