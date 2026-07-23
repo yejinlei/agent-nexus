@@ -73,7 +73,14 @@ go build -o agent-nexus.exe
 ## 快速开始
 
 ```powershell
-# 一键扫描 → 检测代理 → 创建快照 → 配置所有已安装的 agent
+# 1. 创建配置快照（备份）
+agent-nexus conf bak
+
+# 2. 配置所有 agent（先备份，再写入代理配置）
+agent-nexus agent configure --agents all
+
+# 3. 验证配置结果
+agent-nexus agent discover
 agent-nexus configure --agents all
 ```
 
@@ -94,10 +101,10 @@ agent-nexus 支持两种代理接入方式：
 ### 自定义代理（手动指定）
 
 ```powershell
-agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
-agent-nexus detect --url https://proxy.example.com/v1 --key abc123
-agent-nexus route --url http://my-local-proxy:9000/v1 --key mykey
-agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
+agent-nexus agent configure --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
+agent-nexus proxy detect --url https://proxy.example.com/v1 --key abc123
+agent-nexus proxy route --url http://my-local-proxy:9000/v1 --key mykey
+agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 ```
 
 `--url` 和 `--key` 是全局选项，可覆盖自动检测，支持任意代理地址和密钥。`sniff` 命令还可自动检测自定义 LLM endpoint 的消息格式和可用模型列表。
@@ -110,37 +117,34 @@ agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 | CC-Switch | 自动检测 CC-Switch 配置（`~\AppData\Roaming\cc-switch`） |
 | 自定义代理 | 通过 `--url` + `--key` 手动指定任意代理地址 |
 | 本地代理 | 通过 `--url` 指定本地运行的代理（如 `http://127.0.0.1:8080/v1`） |
-
-> ⚠️ **每次配置仅支持一个代理**。agent-nexus 不支持同时配置多个代理，所有 agent 共享同一个代理地址。
-
----
-
-## 命令参考
-
-```
-agent-nexus configure --agents <agents>   备份后自动配置指定的 agent（必选 --agents）
-agent-nexus discover [-v]                  扫描已安装的 agent（-v 显示模型详情）
-agent-nexus detect                         检测 CCX Desktop 代理配置
-agent-nexus status                         显示各 agent 当前配置状态
-agent-nexus route                          显示模型路由表
-agent-nexus backup [-b <branch>] [-m <msg>] 备份所有配置（创建快照）
-agent-nexus snapshot [-b <branch>] [-m <msg>] 创建命名快照
-agent-nexus version                        列出所有配置快照
-agent-nexus restore -s <id>                恢复到指定快照（支持 "latest"）
-agent-nexus diff --old <id> --new <id>     对比两个快照的差异
-agent-nexus branch                         管理配置分支（create / switch / list / show）
-agent-nexus sniff -u <url> -k <key> [-v]   嗅探 LLM 提供商的消息格式和可用模型
-```
+agent-nexus agent discover [-v]             扫描已安装的 agent（-v 显示模型详情）
+agent-nexus agent list                      显示可安装的 agent 列表
+agent-nexus agent install <name>            安装 agent 运行时
+agent-nexus agent uninstall <name>          卸载 agent 运行时
+agent-nexus agent update <name>             更新指定 agent
+agent-nexus agent configure --agents all    配置所有已安装 agent
+agent-nexus proxy detect                    检测 AI 代理配置
+agent-nexus proxy route                     显示模型路由表
+agent-nexus proxy sniff -u <url> -k <key>   嗅探 LLM 提供商消息格式和模型
+agent-nexus proxy db add -u <url> -k <key>  嗅探并保存到数据库（SQLite）
+agent-nexus proxy db list                   列出已保存的代理配置
+agent-nexus proxy db rm <id>                删除指定代理配置
+agent-nexus proxy db query [filter]         查询代理配置（可选按 ID 或 URL 过滤）
+agent-nexus conf bak [-b <branch>] [-m <msg>] 备份所有配置（创建快照）
+agent-nexus conf history                    列出所有配置快照
+agent-nexus conf show [-b <branch>] [-m <msg>] 创建命名快照
+agent-nexus conf rollback -s <id>           恢复到指定快照（支持 "latest"）
+agent-nexus conf diff --old <id> --new <id> 对比两个快照的差异
 
 ### 全局选项
 
 `--url` 和 `--key` 是全局选项，可用于所有命令，跳过自动嗅探直接指定代理地址和密钥：
 
 ```powershell
-agent-nexus configure --agents all --url http://127.0.0.1:8080/v1 --key sk-xxx
-agent-nexus detect --url http://proxy:9000/v1 --key abc
-agent-nexus route --url http://proxy:9000/v1 --key abc
-agent-nexus sniff -u https://token.sensenova.cn/v1 -k sk-xxx
+agent-nexus agent configure --agents all --url http://127.0.0.1:8080/v1 --key sk-xxx
+agent-nexus proxy detect --url http://proxy:9000/v1 --key abc
+agent-nexus proxy route --url http://proxy:9000/v1 --key abc
+agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 ```
 
 ---

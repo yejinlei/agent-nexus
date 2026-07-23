@@ -99,10 +99,17 @@ agent-nexus agent update codex      # 更新到最新版本
 
 ## 快速开始
 
-一键扫描 → 检测代理 → 创建快照 → 配置所有已安装的 agent：
+配置所有已安装的 AI coding agent（Grok, Copilot, Cline, Devin, Aider 等）：
 
 ```powershell
+# 1. 创建配置快照（备份）
 agent-nexus conf bak
+
+# 2. 配置所有 agent（先备份，再写入代理配置）
+agent-nexus agent configure --agents all
+
+# 3. 验证配置结果
+agent-nexus agent discover
 ```
 
 ---
@@ -120,6 +127,7 @@ agent-nexus/
     ├── color/                       # 终端彩色输出
     ├── discover/                    # 自动发现 agent
     ├── db/                          # SQLite 代理配置数据库
+    ├── install/                     # agent 运行时安装
     ├── model/                       # 模型路由表构建
     ├── proxy/                       # 代理检测（CCX / 自定义）
     ├── sniff/                       # LLM endpoint 嗅探
