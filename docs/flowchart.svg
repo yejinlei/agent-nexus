@@ -128,7 +128,7 @@
         <text x="170" y="33" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">web</text>
 
         <rect x="0" y="55" width="60" height="45" rx="6"/>
-        <text x="30" y="73" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">opencode</text>
+        <text x="30" y="73" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="8" font-weight="600">opencode</text>
         <text x="30" y="88" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">release</text>
 
         <rect x="70" y="55" width="60" height="45" rx="6"/>
@@ -238,7 +238,7 @@
         <text x="40" y="42" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">IDE</text>
 
         <rect x="90" y="0" width="80" height="60" rx="8" fill="#00b894" fill-opacity="0.15" stroke="#00b894" stroke-width="0.8"/>
-        <text x="130" y="25" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">deepseek</text>
+        <text x="130" y="25" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="8" font-weight="600">deepseek</text>
         <text x="130" y="42" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">CLI</text>
 
         <rect x="180" y="0" width="80" height="60" rx="8" fill="#00b894" fill-opacity="0.15" stroke="#00b894" stroke-width="0.8"/>
