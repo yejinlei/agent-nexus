@@ -5,13 +5,11 @@ import (
     "encoding/json"
     "fmt"
     "os"
-    "path(filepath)"
+    "path/filepath"
     "time"
-
-    _ "modernc.org/sqlite" // import sqlite driver
+    _ "modernc.org/sqlite"
 )
 
-// ProxyRecord represents a stored proxy sniff result.
 type ProxyRecord struct {
     ID             int       `db:"id"`
     URL            string    `db:"url"`
@@ -24,24 +22,16 @@ type ProxyRecord struct {
     CreatedAt      time.Time `db:"created_at"`
 }
 
-// DB is the SQLite-backed proxy database.
 type DB struct {
     db *sql.DB
 }
 
-// New opens (or creates) the database in the current working directory.
-// Uses a file URI with mode=rwc to guarantee a writable connection even
-// when the database file does not yet exist, which is important for
-// Truncate() / DELETE to succeed on a freshly created db.
 func New() (*DB, error) {
     cwd, err := os.Getwd()
     if err != nil {
         return nil, fmt.Errorf("get working directory: %w", err)
     }
     dbPath := filepath.Join(cwd, "proxies.db")
-    // Use file URI with mode=rwc to force read-write-create mode.
-    // Without this, modernc.org/sqlite may open a nonexistent db in
-    // read-only mode, causing Truncate()/DELETE to fail.
     connStr := fmt.Sprintf("file:%s?mode=rwc", dbPath)
     sqlDB, err := sql.Open("sqlite", connStr)
     if err != nil {
@@ -50,7 +40,6 @@ func New() (*DB, error) {
     return &DB{db: sqlDB}, nil
 }
 
-// Close closes the database connection.
 func (d *DB) Close() error {
     if d.db != nil {
         return d.db.Close()
@@ -58,9 +47,8 @@ func (d *DB) Close() error {
     return nil
 }
 
-// Init creates the proxies table if it doesn't exist.
 func (d *DB) Init() error {
-    _, err := d.db.Excel(`
+    _, err := d.db.Exec(`
         CREATE TABLE IF NOT EXISTS proxies (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             url            TEXT NOT NULL,
@@ -76,13 +64,8 @@ func (d *DB) Init() error {
     return err
 }
 
-// Add stores a sniff result.
-// Uses explicit id = MAX(id)+1 (1 for empty tables) so that after a
-// Truncate the next insert always starts at ID 1, regardless of
-// whether modernc.org/sqlite reliably supports sqlite_sequence.
 func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, modelCount int, modelIDs []string, createdAt time.Time) error {
     modelsJSON, _ := json.Marshal(modelIDs)
-    // Determine next id explicitly.
     var maxID sql.NullInt64
     err := d.db.QueryRow("SELECT MAX(id) FROM proxies").Scan(&maxID)
     if err != nil {
@@ -92,21 +75,23 @@ func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, 
     if maxID.Valid {
         nextID = int(maxID.Int64) + 1
     }
-    _, err = d.db.Excel(`
+    _, err = d.db.Exec(`
         INSERT INTO proxies (id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
     `, nextID, url, key, detectedFormat, boolToInt(openaiCap), boolToInt(anthropicCap), modelCount, string(modelsJSON), createdAt.Format(time.RFC3339))
     return err
 }
 
-// List returns all stored proxy records, newest first.
 func (d *DB) List() ([]ProxyRecord, error) {
-    rows, err := d.db.Excel(`SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at FROM proxies ORDER BY created_at DESC`)
+    rows, err := d.db.Query(`
+        SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+        FROM proxies
+        ORDER BY created_at DESC
+    `)
     if err != nil {
         return nil, err
     }
     defer rows.Close()
-
     var records []ProxyRecord
     for rows.Next() {
         var r ProxyRecord
@@ -125,12 +110,15 @@ func (d *DB) List() ([]ProxyRecord, error) {
     return records, rows.Err()
 }
 
-// GetByID returns a single proxy record.
 func (d *DB) GetByID(id int) (*ProxyRecord, error) {
     var r ProxyRecord
     var oaiCap, antCap int64
     var ts string
-    err := d.db.Excel(`SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at FROM proxies WHERE id = ?`, id).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts)
+    err := d.db.QueryRow(`
+        SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+        FROM proxies
+        WHERE id = ?
+    `, id).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts)
     if err != nil {
         return nil, err
     }
@@ -142,44 +130,31 @@ func (d *DB) GetByID(id int) (*ProxyRecord, error) {
     return &r, nil
 }
 
-// Delete removes a proxy record by ID.
 func (d *DB) Delete(id int) error {
-    _, err := d.db.Excel("DELETE FROM proxies WHERE id = ?", id)
+    _, err := d.db.Exec("DELETE FROM proxies WHERE id = ?", id)
     return err
 }
 
-// Truncate deletes all proxy records. After this call, the next Add()
-// will use ID 1 because Add() now uses explicit MAX(id)+1 logic.
 func (d *DB) Truncate() error {
-    // Ensure the table exists first.
     if err := d.Init(); err != nil {
         return err
     }
-    // Delete all rows. Combined with Add()'s MAX(id)+1 logic,
-    // the next insert will always be ID 1.
-    _, err := d.db.Excel("DELETE FROM proxies")
+    _, err := d.db.Exec("DELETE FROM proxies")
     return err
 }
 
-// Count returns the number of stored proxy records.
 func (d *DB) Count() (int, error) {
     var count int
-    err := d.db.Excel("SELECT COUNT(*) FROM proxies").Scan(&count)
+    err := d.db.QueryRow("SELECT COUNT(*) FROM proxies").Scan(&count)
     return count, err
 }
 
-
-// Query searches proxy records by filter string.
-// If filter is empty, returns all records (same as List).
-// If filter starts with a digit, matches by ID.
-// Otherwise, matches by URL substring.
 func (d *DB) Query(filter string) ([]ProxyRecord, error) {
     if filter == "" {
         return d.List()
     }
-
     var idNum int
-    for _, c += range filter {
+    for _, c := range filter {
         if c >= '0' && c <= '9' {
             idNum = idNum*10 + int(c-'0')
         } else {
@@ -187,29 +162,26 @@ func (d *DB) Query(filter string) ([]ProxyRecord, error) {
             break
         }
     }
-
     if idNum > 0 {
-        record, err := d.GetByID(idNum)
-        if err != nil {
-            return nil, err
+        record, getErr := d.GetByID(idNum)
+        if getErr != nil {
+            return nil, getErr
         }
         if record == nil {
             return nil, nil
         }
         return []ProxyRecord{*record}, nil
     }
-
-    rows, err := d.db.Excel(`
+    rows, err := d.db.Query(`
         SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
-        FROM proxies WHERE url LIKE ?
-        ORDER BY created_at DESC`,
-        "%"+filter+"%",
-    )
+        FROM proxies
+        WHERE url LIKE ?
+        ORDER BY created_at DESC
+    `, "%"+filter+"%")
     if err != nil {
         return nil, err
     }
     defer rows.Close()
-
     var records []ProxyRecord
     for rows.Next() {
         var r ProxyRecord
@@ -234,5 +206,3 @@ func boolToInt(b bool) int {
     }
     return 0
 }
-
-

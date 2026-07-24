@@ -15,99 +15,101 @@ const (
 
 // Agent represents an installable AI agent runtime
 type Agent struct {
-	Name       string            // machine name
-	Display    string            // human-readable name
-	Category   string            // "cli" or "ide"
+	Name           string            // machine name
+	Display        string            // human-readable name
+	Category       string            // "cli" or "ide"
 	NpmPackage     string            // npm package name (empty if not on npm)
-	UninstallPaths []string         // relative home paths to remove on uninstall (e.g. ".kimi-code")
-	LegacyBinPaths  []string         // individual files to remove on uninstall (e.g. ".local/bin/kimi-legacy.exe")
-	PipPackage string            // pip package name (empty if not via pip)
-	Download   map[string]string // platform -> download URL
-	Protocol   string            // "openai" or "acp"
-	Notes      string            // additional notes
+	UninstallPaths []string          // relative home paths to remove on uninstall (e.g. ".kimi-code")
+	LegacyBinPaths []string          // individual files to remove on uninstall (e.g. ".local/bin/kimi-legacy.exe")
+	PipPackage     string            // pip package name (empty if not via pip)
+	Download       map[string]string // platform -> download URL
+	Protocol       string            // "openai" or "acp"
+	InstallScript  bool              // true if the download URL is an installer script (install.ps1/install.sh)
+	Notes          string            // additional notes
 }
 
 // registry is the list of installable agent runtimes
 var registry = []Agent{
 	{
-		Name:      "codex",
-		Display:   "Codex (CLI)",
-		Category:  "cli",
-		NpmPackage: "@openai/codex",
+		Name:           "codex",
+		Display:        "Codex (CLI)",
+		Category:       "cli",
+		NpmPackage:     "@openai/codex",
 		UninstallPaths: []string{".codex"},
-		Download:  map[string]string{},
-		Protocol:  "openai",
-		Notes:     "OpenAI Codex CLI — openai-compatible provider",
+		Download:       map[string]string{},
+		Protocol:       "openai",
+		Notes:          "OpenAI Codex CLI — openai-compatible provider",
 	},
 	{
-		Name:      "claude",
-		Display:   "Claude Code",
-		Category:  "cli",
-		NpmPackage: "@anthropic-ai/claude-code",
+		Name:           "claude",
+		Display:        "Claude Code",
+		Category:       "cli",
+		NpmPackage:     "@anthropic-ai/claude-code",
 		UninstallPaths: []string{".claude"},
-		Download:  map[string]string{},
-		Protocol:  "openai",
-		Notes:     "Anthropic Claude Code — npm install, env-based proxy config",
+		Download:       map[string]string{},
+		Protocol:       "openai",
+		Notes:          "Anthropic Claude Code — npm install, env-based proxy config",
 	},
 	{
-		Name:      "kimi",
-		Display:   "Kimi Code CLI",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "kimi",
+		Display:        "Kimi Code CLI",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".kimi-code", ".kimi"},
 		LegacyBinPaths: []string{".local/bin/kimi-legacy.exe", ".local/bin/kimi-cli.exe"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://code.kimi.com/kimi-code/install.ps1",
 			PlatformDarwin:  "https://code.kimi.com/kimi-code/install.sh",
 			PlatformLinux:   "https://code.kimi.com/kimi-code/install.sh",
 		},
-		Protocol: "acp",
-		Notes:    "Kimi Code CLI — official installer; config at ~/.kimi-code/config.toml",
+		Protocol:      "acp",
+		InstallScript: true,
+		Notes:         "Kimi Code CLI — official installer; config at ~/.kimi-code/config.toml",
 	},
 	{
-		Name:      "opencode",
-		Display:   "OpenCode",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "opencode",
+		Display:        "OpenCode",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".config/opencode"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-darwin-arm64",
 			PlatformLinux:   "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-linux-amd64",
 		},
-		Protocol:  "openai",
-		Notes:     "OpenCode CLI — JSON config with provider map",
+		Protocol: "openai",
+		Notes:    "OpenCode CLI — JSON config with provider map",
 	},
 	{
-		Name:      "openclaw",
-		Display:   "OpenClaw",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "openclaw",
+		Display:        "OpenClaw",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".openclaw"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://github.com/openclaw/openclaw/releases/latest/download/openclaw-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/openclaw/openclaw/releases/latest/download/openclaw-darwin-arm64",
 			PlatformLinux:   "https://github.com/openclaw/openclaw/releases/latest/download/openclaw-linux-amd64",
 		},
-		Protocol:  "openai",
-		Notes:     "OpenClaw CLI — JSON config with model providers",
+		Protocol: "openai",
+		Notes:    "OpenClaw CLI — JSON config with model providers",
 	},
 	{
-		Name:      "openclaude",
-		Display:   "OpenClaude",
-		Category:  "cli",
-		NpmPackage: "@gitlawb/openclaude",
+		Name:           "openclaude",
+		Display:        "OpenClaude",
+		Category:       "cli",
+		NpmPackage:     "@gitlawb/openclaude",
 		UninstallPaths: []string{".openclaude"},
-		Download:  map[string]string{},
-		Protocol:  "openai",
-		Notes:     "OpenClaude CLI — npm install, openai-compatible provider",
+		Download:       map[string]string{},
+		Protocol:       "openai",
+		Notes:          "OpenClaude CLI — npm install, openai-compatible provider",
 	},
 	{
-		Name:      "cursor",
-		Display:   "Cursor (IDE)",
-		Category:  "ide",
+		Name:       "cursor",
+		Display:    "Cursor (IDE)",
+		Category:   "ide",
 		NpmPackage: "",
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://www.cursor.com/download",
 			PlatformDarwin:  "https://www.cursor.com/download",
 			PlatformLinux:   "https://www.cursor.com/download",
@@ -116,28 +118,29 @@ var registry = []Agent{
 		Notes:    "Cursor IDE — openai-compatible provider in settings.json",
 	},
 	{
-		Name:      "hermes",
-		Display:   "Hermes CLI",
-		Category:  "cli",
-		NpmPackage: "",
-		PipPackage: "",
+		Name:           "hermes",
+		Display:        "Hermes CLI",
+		Category:       "cli",
+		NpmPackage:     "",
+		PipPackage:     "",
 		UninstallPaths: []string{".hermes"},
 		LegacyBinPaths: []string{".local/bin/hermes.exe"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://hermes-agent.nousresearch.com/install.ps1",
 			PlatformDarwin:  "https://hermes-agent.nousresearch.com/install.sh",
 			PlatformLinux:   "https://hermes-agent.nousresearch.com/install.sh",
 		},
-		Protocol: "acp",
-		Notes:    "Hermes Agent CLI — official installer script",
+		Protocol:      "acp",
+		InstallScript: true,
+		Notes:         "Hermes Agent CLI — official installer script",
 	},
 	{
-		Name:      "trae",
-		Display:   "Trae CLI",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "trae",
+		Display:        "Trae CLI",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".traecli"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://github.com/trae-ai/trae/releases/latest/download/trae.exe",
 			PlatformDarwin:  "https://github.com/trae-ai/trae/releases/latest/download/trae",
 			PlatformLinux:   "https://github.com/trae-ai/trae/releases/latest/download/trae",
@@ -146,12 +149,12 @@ var registry = []Agent{
 		Notes:    "Trae CLI — ACP protocol with mcpServers config",
 	},
 	{
-		Name:      "codebuddy",
-		Display:   "CodeBuddy",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "codebuddy",
+		Display:        "CodeBuddy",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".codebuddy"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://codebuddy.com/download",
 			PlatformDarwin:  "https://codebuddy.com/download",
 			PlatformLinux:   "https://codebuddy.com/download",
@@ -160,32 +163,32 @@ var registry = []Agent{
 		Notes:    "CodeBuddy — download page / installer placeholder; actual CLI package to be confirmed",
 	},
 	{
-		Name:      "copilot",
-		Display:   "GitHub Copilot CLI",
-		Category:  "cli",
-		NpmPackage: "github/copilot-cli",
+		Name:           "copilot",
+		Display:        "GitHub Copilot CLI",
+		Category:       "cli",
+		NpmPackage:     "github/copilot-cli",
 		UninstallPaths: []string{".config/github-copilot"},
-		Download:  map[string]string{},
-		Protocol:  "none",
-		Notes:     "GitHub Copilot — npm package name placeholder; GitHub account controls provider",
+		Download:       map[string]string{},
+		Protocol:       "none",
+		Notes:          "GitHub Copilot — npm package name placeholder; GitHub account controls provider",
 	},
 	{
-		Name:      "pi",
-		Display:   "Pi CLI",
-		Category:  "cli",
-		NpmPackage: "@earendil-works/pi-coding-agent",
+		Name:           "pi",
+		Display:        "Pi CLI",
+		Category:       "cli",
+		NpmPackage:     "@earendil-works/pi-coding-agent",
 		UninstallPaths: []string{".pi"},
-		Download:  map[string]string{},
-		Protocol:  "none",
-		Notes:     "Inflection Pi CLI — npm package @earendil-works/pi-coding-agent",
+		Download:       map[string]string{},
+		Protocol:       "none",
+		Notes:          "Inflection Pi CLI — npm package @earendil-works/pi-coding-agent",
 	},
 	{
-		Name:      "deveco",
-		Display:   "Deveco Studio / CLI",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "deveco",
+		Display:        "Deveco Studio / CLI",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".config/deveco"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://developer.huawei.com/consumer/cn/deveco-studio",
 			PlatformDarwin:  "https://developer.huawei.com/consumer/cn/deveco-studio",
 			PlatformLinux:   "https://developer.huawei.com/consumer/cn/deveco-studio",
@@ -194,12 +197,12 @@ var registry = []Agent{
 		Notes:    "Huawei Devecode / Deveco — openai model config unavailable; own model directory",
 	},
 	{
-		Name:      "kiro",
-		Display:   "Kiro CLI",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "kiro",
+		Display:        "Kiro CLI",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".kiro"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://kiro.com/download",
 			PlatformDarwin:  "https://kiro.com/download",
 			PlatformLinux:   "https://kiro.com/download",
@@ -208,12 +211,12 @@ var registry = []Agent{
 		Notes:    "Kiro CLI — download placeholder; repo/release URL to be confirmed",
 	},
 	{
-		Name:      "qoder",
-		Display:   "Qoder CLI",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "qoder",
+		Display:        "Qoder CLI",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".qoder"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://qoder.com/download",
 			PlatformDarwin:  "https://qoder.com/download",
 			PlatformLinux:   "https://qoder.com/download",
@@ -222,12 +225,12 @@ var registry = []Agent{
 		Notes:    "Qoder CLI — download placeholder; repo/release URL to be confirmed",
 	},
 	{
-		Name:      "grok",
-		Display:   "Grok",
-		Category:  "cli",
-		NpmPackage: "",
+		Name:           "grok",
+		Display:        "Grok",
+		Category:       "cli",
+		NpmPackage:     "",
 		UninstallPaths: []string{".grok"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://github.com/grok/grok/releases/latest/download/grok-windows-amd64.exe",
 			PlatformDarwin:  "https://github.com/grok/grok/releases/latest/download/grok-darwin-arm64",
 			PlatformLinux:   "https://github.com/grok/grok/releases/latest/download/grok-linux-amd64",
@@ -236,12 +239,12 @@ var registry = []Agent{
 		Notes:    "Grok — GitHub release asset placeholder; actual release filenames to be verified",
 	},
 	{
-		Name:      "lmstudio",
-		Display:   "LM Studio (CLI)",
-		Category:  "cli",
-		NpmPackage: "@lmstudio/sdk",
+		Name:           "lmstudio",
+		Display:        "LM Studio (CLI)",
+		Category:       "cli",
+		NpmPackage:     "@lmstudio/sdk",
 		UninstallPaths: []string{".lmstudio"},
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://lmstudio.ai/",
 			PlatformDarwin:  "https://lmstudio.ai/",
 			PlatformLinux:   "https://lmstudio.ai/",
@@ -250,27 +253,26 @@ var registry = []Agent{
 		Notes:    "LM Studio CLI — openai-compatible provider, local LLM",
 	},
 	{
-		Name:      "clawx",
-		Display:   "ClawX (IDE)",
-		Category:  "ide",
+		Name:       "clawx",
+		Display:    "ClawX (IDE)",
+		Category:   "ide",
 		NpmPackage: "",
-		Download:  map[string]string{
+		Download: map[string]string{
 			PlatformWindows: "https://clawx.ai/download",
 		},
 		Protocol: "openai",
 		Notes:    "ClawX IDE — openai-compatible provider config",
 	},
 	{
-		Name:      "gemini",
-		Display:   "Gemini CLI",
-		Category:  "cli",
-		NpmPackage: "@google/gemini-cli",
+		Name:           "gemini",
+		Display:        "Gemini CLI",
+		Category:       "cli",
+		NpmPackage:     "@google/gemini-cli",
 		UninstallPaths: []string{".gemini"},
-		Download:  map[string]string{},
-		Protocol:  "none",
-		Notes:     "Google Gemini CLI — npm package, Google auth (OAuth/API key)",
+		Download:       map[string]string{},
+		Protocol:       "none",
+		Notes:          "Google Gemini CLI — npm package, Google auth (OAuth/API key)",
 	},
-
 }
 
 // CurrentPlatform returns the normalized platform string
@@ -296,24 +298,26 @@ func (a Agent) IsIDE() bool {
 }
 
 // InstallCommand returns the command to install this agent on the current platform.
-// Returns (command, isNpm, isPip) — caller checks isNpm first (npm install -g),
-// then isPip (pip install), then falls back to direct download.
-func (a Agent) InstallCommand() (string, bool, bool) {
+// Returns (command, isNpm, isPip, isInstallScript).
+// caller checks isNpm first (npm install -g), then isPip (pip install),
+// then isInstallScript (download remote script and execute),
+// then falls back to direct download.
+func (a Agent) InstallCommand() (string, bool, bool, bool) {
 	platform := CurrentPlatform()
 
 	// Prefer npm install if available
 	if a.NpmPackage != "" {
-		return fmt.Sprintf("npm install -g %s", a.NpmPackage), true, false
+		return fmt.Sprintf("npm install -g %s", a.NpmPackage), true, false, false
 	}
 
 	// Prefer pip install if available
 	if a.PipPackage != "" {
-		return fmt.Sprintf("pip install %s", a.PipPackage), false, true
+		return fmt.Sprintf("pip install %s", a.PipPackage), false, true, false
 	}
 
 	// Fall back to direct download URL for the current platform
 	if url, ok := a.Download[platform]; ok {
-		return url, false, false
+		return url, false, false, a.InstallScript
 	}
 
 	// Fallback: show all available download URLs
@@ -321,7 +325,7 @@ func (a Agent) InstallCommand() (string, bool, bool) {
 	for p, url := range a.Download {
 		urls = append(urls, fmt.Sprintf("%s: %s", p, url))
 	}
-	return "No install command available for " + platform + "\n" + strings.Join(urls, "\n"), false, false
+	return "No install command available for " + platform + "\n" + strings.Join(urls, "\n"), false, false, false
 }
 
 // UninstallCommand returns the command to uninstall this agent on the current platform.
@@ -359,7 +363,7 @@ func (a Agent) GetLegacyBinPaths() []string {
 // UpdateCommand returns the command to update this agent on the current platform.
 // For npm packages, update = re-install. For pip packages, pip install --upgrade.
 // For direct download, re-download to same location.
-func (a Agent) UpdateCommand() (string, bool, bool) {
+func (a Agent) UpdateCommand() (string, bool, bool, bool) {
 	// Update is the same as install: npm install -g <package>, pip install --upgrade, or re-download
 	return a.InstallCommand()
 }
