@@ -129,7 +129,7 @@ agent-nexus proxy sniff -u <url> -k <key>   嗅探 LLM 提供商消息格式和�
 agent-nexus proxy db add -u <url> -k <key>  嗅探并保存到数据库（SQLite）
 agent-nexus proxy db list                   列出已保存的代理配置
 agent-nexus proxy db rm <id>                删除指定代理配置
-agent-nexus proxy db query [filter]         查询代理配置（可选按 ID 或 URL 过滤）
+agent-nexus proxy db query [filter]         查询代理配置（可选按 ID 或 URL 过滤）`nagent-nexus proxy db show <id>              显示代理配置详情（完整 Key、模型列表）`nagent-nexus proxy db rm --all               删除全部代理配置（二次确认，ID 从 1 开始）`nagent-nexus proxy db check <id>             嗅探指定记录是否有效，无效则交互删除`nagent-nexus proxy db check --all            嗅探所有记录，对无效记录逐一交互删除
 agent-nexus conf bak [-b <branch>] [-m <msg>] 备份所有配置（创建快照）
 agent-nexus conf history                    列出所有配置快照
 agent-nexus conf show [-b <branch>] [-m <msg>] 创建命名快照
@@ -149,6 +149,79 @@ agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 
 ---
 
+### proxy db 命令
+
+`proxy db` 命令用于管理已保存的代理配置数据库（SQLite），支持嗅探、保存、查看、检查、删除代理记录。
+
+```powershell
+agent-nexus proxy db add -u <url> -k <key>  嗅探并保存到数据库（SQLite）
+agent-nexus proxy db list                    列出已保存的代理配置
+agent-nexus proxy db show <id>               显示代理配置详情（完整 Key、模型列表）
+agent-nexus proxy db rm <id>                 删除指定代理配置
+agent-nexus proxy db rm --all                删除全部代理配置（二次确认，ID 从 1 开始）
+agent-nexus proxy db check <id>              嗅探指定记录是否有效，无效则交互删除
+agent-nexus proxy db check --all             嗅探所有记录，对无效记录逐一交互删除
+agent-nexus proxy db query [filter]          查询代理配置（可选按 ID 或 URL 过滤）
+```
+
+#### `proxy db add`
+
+嗅探指定代理 URL，自动检测消息格式（OpenAI / Anthropic 等）和可用模型列表，保存到 SQLite 数据库。
+
+```powershell
+agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
+```
+
+#### `proxy db list`
+
+列出数据库中所有已保存的代理配置：
+
+```powershell
+agent-nexus proxy db list
+```
+
+#### `proxy db show <id>`
+
+显示指定 ID 的代理配置完整详情，包括完整 API Key（不脱敏）和全部模型名称列表：
+
+```powershell
+agent-nexus proxy db show 2
+```
+
+#### `proxy db rm <id>`
+
+删除指定 ID 的代理配置记录：
+
+```powershell
+agent-nexus proxy db rm 2
+```
+
+#### `proxy db rm --all`
+
+删除数据库中所有代理配置记录，执行时弹出二次确认提示，输入 `yes` 后执行删除，自增 ID 计数器重置：
+
+```powershell
+agent-nexus proxy db rm --all
+```
+
+#### `proxy db check <id>` / `check --all`
+
+嗅探指定 ID 或所有记录是否仍然有效（相当于 `proxy sniff` 功能）。对无效记录交互式弹出 yes/no 提示，让用户决定是否删除：
+
+```powershell
+agent-nexus proxy db check 2
+agent-nexus proxy db check --all
+```
+
+#### `proxy db query [filter]`
+
+按 ID 或 URL 子串过滤查询代理配置：
+
+```powershell
+agent-nexus proxy db query 1              # 按 ID 精确查询
+agent-nexus proxy db query example.com    # 按 URL 子串模糊查询
+agent-nexus proxy db query                # 列出所有记录
+```
 ## 模型路由（三层机制）
 
 ```mermaid
