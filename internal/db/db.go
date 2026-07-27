@@ -135,11 +135,27 @@ func (d *DB) Delete(id int) error {
     return err
 }
 
+// Truncate deletes all proxy records.
 func (d *DB) Truncate() error {
     if err := d.Init(); err != nil {
         return err
     }
     _, err := d.db.Exec("DELETE FROM proxies")
+    return err
+}
+
+// TruncateReset deletes all proxy records AND resets the SQLite autoincrement
+// sequence so the next INSERT will start from ID 1.
+func (d *DB) TruncateReset() error {
+    if err := d.Init(); err != nil {
+        return err
+    }
+    _, err := d.db.Exec("DELETE FROM proxies")
+    if err != nil {
+        return err
+    }
+    // Reset the AUTOINCREMENT counter by deleting the sqlite_sequence row.
+    _, err = d.db.Exec("DELETE FROM sqlite_sequence WHERE name = 'proxies'")
     return err
 }
 
