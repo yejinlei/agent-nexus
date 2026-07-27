@@ -308,8 +308,8 @@ func RenderVerboseTable(agents []AgentInfo) {
             widthProto, a.Protocol,
             widthStatus, installed,
             widthConfig, configured,
-            widthDef, agentDefaultModel(a.Name),
-            widthRouted, agentDefaultModel(a.Name),
+            widthDef, AgentDefaultModel(a.Name),
+            widthRouted, AgentDefaultModel(a.Name),
             widthCustom, custom)
     }
     fmt.Println()
@@ -383,7 +383,7 @@ func agentVerboseStatuses(agents []AgentInfo) []string {
 func agentDefaultModels(agents []AgentInfo) []string {
     models := make([]string, len(agents))
     for i, a := range agents {
-        models[i] = agentDefaultModel(a.Name)
+        models[i] = AgentDefaultModel(a.Name)
     }
     return models
 }
@@ -391,7 +391,7 @@ func agentDefaultModels(agents []AgentInfo) []string {
 func agentRoutedModels(agents []AgentInfo) []string {
     models := make([]string, len(agents))
     for i, a := range agents {
-        models[i] = agentDefaultModel(a.Name)
+        models[i] = AgentDefaultModel(a.Name)
     }
     return models
 }
@@ -411,7 +411,7 @@ func agentCustomIcon(a AgentInfo) string {
     return "-"
 }
 
-func agentDefaultModel(name string) string {
+func AgentDefaultModel(name string) string {
     m := map[string]string{
         "codex":     "gpt-5.5",
         "claude":    "claude-sonnet-4-20250514",

@@ -64,3 +64,31 @@ func extractModelFromConfig(path string) (string, bool) {
 	}
 	return "", false
 }
+
+// ExtractConfiguredModel reads the currently configured model name from an agent's
+// config file, handling TOML, JSON, and YAML formats.
+// Returns (model, found).
+func ExtractConfiguredModel(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	s := string(data)
+
+	// TOML: model = "xxx"
+	re := regexp.MustCompile(`model\s*=\s*"([^"]+)"`)
+	if m := re.FindStringSubmatch(s); len(m) > 1 {
+		return m[1], true
+	}
+	// YAML: default_model: xxx
+	re2 := regexp.MustCompile(`(?i)default_model:\s*(\S+)`)
+	if m := re2.FindStringSubmatch(s); len(m) > 1 {
+		return m[1], true
+	}
+	// JSON: "model": "xxx"
+	re3 := regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+	if m := re3.FindStringSubmatch(s); len(m) > 1 {
+		return m[1], true
+	}
+	return "", false
+}

@@ -106,7 +106,7 @@ func getProxySettings() (*proxy.Proxy, error) {
 
 var agentCmd = &cobra.Command{
 	Use:   "agent",
-	Short: "Agent 管理（发现、安装、卸载、更新、配置）",
+	Short: "Agent 管理（发现、安装、卸载、更新、配置、模型）",
 	Long: `Agent 管理命令组，用于发现本机已安装的 AI agent、安装/卸载/更新 agent 运行时。
 
 子命令：
@@ -116,10 +116,13 @@ var agentCmd = &cobra.Command{
   uninstall 卸载指定 agent
   update    更新指定 agent
   configure 配置 agent（需 --agents，先备份再写入）
+  models    显示 agent 支持的模型及模型支持情况
 `,
 }
 
 var discoverVerbose bool
+
+var agentModelsName string
 
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
@@ -740,6 +743,210 @@ var agentConfigureCmd = &cobra.Command{
 	},
 }
 
+var agentModelsCmd = &cobra.Command{
+	Use:   "models [name]",
+	Short: "显示 agent 支持的模型及模型支持情况",
+	Long: `显示每个 agent 支持的大模型（LLM）类型和模型支持情况。
+
+用法：
+  agent-nexus agent models              显示所有 agent 的模型支持情况
+  agent-nexus agent models --name codex  显示指定 agent 的详细信息
+  agent-nexus agent models codex         同上（位置参数）
+
+输出包含：
+  - Agent 名称与类型（CLI / IDE）
+  - 协议类型（OpenAI 兼容 / ACP / N/A）
+  - 默认模型（agent-nexus 配置时使用的模型名）
+  - 当前配置模型（从配置文件中读取的实际模型名）
+  - 是否支持自定义模型
+  - 若检测到代理，还会显示上游可用模型列表和路由信息
+
+示例：
+  agent-nexus agent models
+  agent-nexus agent models claude
+  agent-nexus agent models --name kimi
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Determine target agent(s)
+		var targetName string
+		if len(args) > 0 {
+			targetName = args[0]
+		} else if agentModelsName != "" {
+			targetName = agentModelsName
+		}
+
+		agents := discover.Discover()
+
+		// Filter by name if specified
+		if targetName != "" {
+			found := false
+			for _, a := range agents {
+				if a.Name == targetName {
+					agents = []discover.AgentInfo{a}
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Try looking up in install registry for agents not yet discovered
+				for _, reg := range discover.GetRegistry() {
+					if reg.Name == targetName {
+						agents = []discover.AgentInfo{{
+							Name:           reg.Name,
+							Category:       reg.Category,
+							Protocol:       reg.Protocol,
+							IsConfigurable: reg.IsConfigurable,
+							Notes:          reg.Notes,
+						}}
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				return fmt.Errorf("未找到 agent: %s\n\n可用列表: agent-nexus agent list", targetName)
+			}
+		}
+
+		if len(agents) == 0 {
+			fmt.Println("未发现任何 agent。")
+			fmt.Println()
+			return nil
+		}
+
+		// Try to detect proxy for upstream model info
+		var p *proxy.Proxy
+		var upstreamModels []string
+		if agentModelsName == "" && len(args) == 0 {
+			proxy, err := getProxySettings()
+			if err == nil {
+				p = proxy
+				fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
+				upstreamModels = sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+				if len(upstreamModels) > 0 {
+					fmt.Printf("上游可用模型 (%d): %s\n\n", len(upstreamModels), strings.Join(upstreamModels, ", "))
+				} else {
+					fmt.Printf("上游模型列表: 未获取到\n\n")
+				}
+			} else {
+				fmt.Printf("未检测到 AI 代理配置（仅显示默认模型）\n\n")
+			}
+		} else {
+			fmt.Printf("查询: %s\n\n", targetName)
+		}
+
+		// Header
+		fmt.Println("Agent 模型支持情况:")
+		fmt.Println(strings.Repeat("-", 90))
+
+		colName     := "Agent"
+		colCat      := "类型"
+		colProto    := "协议"
+		colDefault  := "默认模型"
+		colCurrent  := "当前配置模型"
+		colConfig   := "可配置"
+		colNotes    := "说明"
+
+		// Compute column widths
+		widthName     := 6
+		widthCat      := 4
+		widthProto    := 17
+		widthDefault  := 10
+		widthCurrent  := 10
+		widthConfig   := 8
+		widthNotes    := 30
+
+		for _, a := range agents {
+			w := len(a.Name)
+			if w > widthName { widthName = w }
+			w = len(a.Category)
+			if w > widthCat { widthCat = w }
+			w = len(a.Protocol)
+			if w > widthProto { widthProto = w }
+		}
+
+		// Header row
+		fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+			widthName, colName,
+			widthCat, colCat,
+			widthProto, colProto,
+			widthDefault, colDefault,
+			widthCurrent, colCurrent,
+			widthConfig, colConfig,
+			colNotes)
+		fmt.Printf("  %s  %s  %s  %s  %s  %s  %s\n",
+			strings.Repeat("-", widthName),
+			strings.Repeat("-", widthCat),
+			strings.Repeat("-", widthProto),
+			strings.Repeat("-", widthDefault),
+			strings.Repeat("-", widthCurrent),
+			strings.Repeat("-", widthConfig),
+			"")
+
+		for _, a := range agents {
+			defaultModel := discover.AgentDefaultModel(a.Name)
+			currentModel := "—"
+			if a.HasConfig && a.ConfigPath != "" {
+				currentModel, _ = agent.ExtractConfiguredModel(a.ConfigPath)
+				if currentModel == "" {
+					currentModel = "未配置"
+				}
+			} else {
+				currentModel = "未安装"
+			}
+
+			configurable := "Yes"
+			if !a.IsConfigurable {
+				configurable = "No"
+			}
+
+			notes := a.Notes
+			if notes == "" && a.IsConfigurable {
+				notes = "可通过代理模型映射切换模型"
+			} else if notes == "" && !a.IsConfigurable {
+				notes = "使用自有模型，不可通过代理配置"
+			}
+
+			// Truncate notes if too long
+			if len(notes) > widthNotes {
+				notes = notes[:widthNotes-1] + "…"
+			}
+
+			fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+				widthName, a.Name,
+				widthCat, a.Category,
+				widthProto, a.Protocol,
+				widthDefault, defaultModel,
+				widthCurrent, currentModel,
+				widthConfig, configurable,
+				notes)
+		}
+
+		fmt.Println()
+
+		// If no specific agent queried, show upstream model list detail
+		if targetName == "" && len(upstreamModels) > 0 {
+			fmt.Printf("上游可用模型详情（按字母排序）:\n")
+			fmt.Println(strings.Repeat("-", 50))
+			sorted := make([]string, len(upstreamModels))
+			copy(sorted, upstreamModels)
+			sort.Strings(sorted)
+			for idx, m := range sorted {
+				if idx%4 == 0 {
+					fmt.Printf("  ")
+				}
+				fmt.Printf("%-30s", m)
+				if idx%4 == 3 || idx == len(sorted)-1 {
+					fmt.Println()
+				}
+			}
+			fmt.Println()
+		}
+
+		return nil
+	},
+}
+
 func initAgentCmd() {
 	agentDiscoverCmd.Flags().BoolVarP(&discoverVerbose, "verbose", "v", false, "显示 agent 支持的所有模型及模型来源（自定义 vs. 模型重定义）")
 	agentInstallCmd.Flags().BoolVarP(&installAll, "all", "a", false, "安装全部 CLI agent")
@@ -750,12 +957,15 @@ func initAgentCmd() {
 	agentConfigureCmd.MarkFlagRequired("agents")
 	agentConfigureCmd.Flags().StringVar(&configureModels, "models", "", "覆盖模型映射，格式: agent=模型名，agent2=模型名")
 
+	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "指定 agent 名称（可选，不指定则显示所有）")
+
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentUninstallCmd)
 	agentCmd.AddCommand(agentUpdateCmd)
 	agentCmd.AddCommand(agentConfigureCmd)
+	agentCmd.AddCommand(agentModelsCmd)
 }
 
 // ========== PROXY GROUP ==========
