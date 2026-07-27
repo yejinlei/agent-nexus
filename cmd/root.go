@@ -124,6 +124,8 @@ var discoverVerbose bool
 
 var agentModelsName string
 
+var agentModelsUpdate bool
+
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
 	Short: "扫描并列出已安装的 AI agent",
@@ -744,6 +746,7 @@ var agentConfigureCmd = &cobra.Command{
 }
 
 
+
 var agentModelsCmd = &cobra.Command{
 	Use:   "models [name]",
 	Short: "显示 agent 原生支持的模型（LLM 模型族和协议）",
@@ -753,16 +756,18 @@ var agentModelsCmd = &cobra.Command{
   agent-nexus agent models              显示所有 agent 的原生模型支持
   agent-nexus agent models --name codex  查询特定 agent
   agent-nexus agent models claude        同上（位置参数）
+  agent-nexus agent models --update      查询代理最新上游模型列表
 
 输出内容：
   - Agent 名称与类型（CLI / IDE）
   - 协议类型（OpenAI 兼容 / ACP / N/A）
-  - 原生支持模型：agent 本身可以使用的模型族（与代理和配置文件无关）
+  - 原生支持模型：agent 本身可以使用的模型族（与代理和配置文件无关，完整不截断）
 
 示例：
   agent-nexus agent models
   agent-nexus agent models claude
   agent-nexus agent models --name kimi
+  agent-nexus agent models --update       查询代理上游最新模型
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var targetName string
@@ -814,7 +819,7 @@ var agentModelsCmd = &cobra.Command{
 			fmt.Printf("Agent: %s\n\n", targetName)
 		}
 		fmt.Println("Agent 原生支持的模型（LLM 模型族）：")
-		fmt.Println(strings.Repeat("-", 110))
+		fmt.Println(strings.Repeat("-", 130))
 
 		colAgent   := "Agent"
 		colType    := "类型"
@@ -825,9 +830,10 @@ var agentModelsCmd = &cobra.Command{
 		widthAgent := len(colAgent)
 		widthType  := len(colType)
 		widthProto := len(colProto)
-		widthModels := 40
-		widthNotes  := 28
+		widthModels := 50  // will be overridden by longest value below
+		widthNotes  := 32
 
+		// Compute column widths based on actual data
 		for _, a := range agents {
 			if len(a.Name) > widthAgent {
 				widthAgent = len(a.Name)
@@ -837,6 +843,10 @@ var agentModelsCmd = &cobra.Command{
 			}
 			if len(a.Protocol) > widthProto {
 				widthProto = len(a.Protocol)
+			}
+			supported, _ := discover.ProtocolExamples(a.Name)
+			if len(supported) > widthModels {
+				widthModels = len(supported)
 			}
 		}
 
@@ -864,9 +874,6 @@ var agentModelsCmd = &cobra.Command{
 			if len(notes) > widthNotes {
 				notes = notes[:widthNotes-1] + "..." 
 			}
-			if len(supported) > widthModels {
-				supported = supported[:widthModels-1] + "..." 
-			}
 
 			fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %s\n",
 				widthAgent, a.Name,
@@ -876,6 +883,41 @@ var agentModelsCmd = &cobra.Command{
 				notes)
 		}
 		fmt.Println()
+
+		// --update: query upstream model list from proxy
+		if agentModelsUpdate {
+			p, err := getProxySettings()
+			if err != nil {
+				fmt.Printf("未检测到 AI 代理，无法查询上游模型列表: %v\n", err)
+				fmt.Printf("请使用 --url 和 --key 指定代理，或确保代理正在运行\n")
+			} else {
+				fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
+				models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+				if len(models) > 0 {
+					sorted := make([]string, len(models))
+					copy(sorted, models)
+					sort.Strings(sorted)
+					fmt.Printf("上游可用模型 (%d)：\n", len(models))
+					fmt.Println(strings.Repeat("-", 60))
+					for idx, m := range sorted {
+						if idx%4 == 0 {
+							fmt.Printf("  ") 
+						}
+						display := m
+						if len(display) > 28 {
+							display = display[:27] + "."
+						}
+						fmt.Printf("%-30s", display)
+						if idx%4 == 3 {
+							fmt.Println()
+						}
+					}
+					fmt.Println()
+				} else {
+					fmt.Println("上游模型列表为空。")
+				}
+			}
+		}
 
 		return nil
 	},
@@ -893,6 +935,7 @@ func initAgentCmd() {
 
 	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "指定 agent 名称（可选，不指定则显示所有）")
 
+	agentModelsCmd.Flags().BoolVarP(&agentModelsUpdate, "update", "u", false, "查询代理最新上游模型列表")
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentInstallCmd)
