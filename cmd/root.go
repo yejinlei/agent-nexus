@@ -124,7 +124,6 @@ var discoverVerbose bool
 
 var agentModelsName string
 
-var agentModelsUpdate bool
 
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
@@ -749,25 +748,20 @@ var agentConfigureCmd = &cobra.Command{
 
 var agentModelsCmd = &cobra.Command{
 	Use:   "models [name]",
-	Short: "显示 agent 原生支持的模型（LLM 模型族和协议）",
-	Long: `显示每个 agent 运行时本身支持的大模型（LLM）模型族和协议类型。
-
-用法：
-  agent-nexus agent models              显示所有 agent 的原生模型支持
-  agent-nexus agent models --name codex  查询特定 agent
-  agent-nexus agent models claude        同上（位置参数）
-  agent-nexus agent models --update      查询代理最新上游模型列表
+	Short: "显示 agent 原生支持的模型",
+	Long: `显示每个 agent 运行时本身支持的模型（LLM）信息。
 
 输出内容：
   - Agent 名称与类型（CLI / IDE）
   - 协议类型（OpenAI 兼容 / ACP / N/A）
-  - 原生支持模型：agent 本身可以使用的模型族（与代理和配置文件无关，完整不截断）
+  - 模型来源：自定义模型 / 需重定向 / 自有模型
+  - 模型列表：agent 本身可接受的模型名
+  - 说明：备注信息
 
-示例：
-  agent-nexus agent models
-  agent-nexus agent models claude
-  agent-nexus agent models --name kimi
-  agent-nexus agent models --update       查询代理上游最新模型
+用法：
+  agent-nexus agent models              显示所有 agent 的模型信息
+  agent-nexus agent models --name codex  查询特定 agent
+  agent-nexus agent models claude        同上（位置参数）
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var targetName string
@@ -814,111 +808,11 @@ var agentModelsCmd = &cobra.Command{
 			return nil
 		}
 
-		// Print title
 		if targetName != "" {
 			fmt.Printf("Agent: %s\n\n", targetName)
 		}
-		fmt.Println("Agent 原生支持的模型（LLM 模型族）：")
-		fmt.Println(strings.Repeat("-", 130))
 
-		colAgent   := "Agent"
-		colType    := "类型"
-		colProto   := "协议"
-		colModels  := "原生支持模型（模型族）"
-		colNotes   := "说明"
-
-		widthAgent := len(colAgent)
-		widthType  := len(colType)
-		widthProto := len(colProto)
-		widthModels := 50  // will be overridden by longest value below
-		widthNotes  := 32
-
-		// Compute column widths based on actual data
-		for _, a := range agents {
-			if len(a.Name) > widthAgent {
-				widthAgent = len(a.Name)
-			}
-			if len(a.Category) > widthType {
-				widthType = len(a.Category)
-			}
-			if len(a.Protocol) > widthProto {
-				widthProto = len(a.Protocol)
-			}
-			supported, _ := discover.ProtocolExamples(a.Name)
-			if len(supported) > widthModels {
-				widthModels = len(supported)
-			}
-		}
-
-		fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %s\n",
-			widthAgent, colAgent,
-			widthType, colType,
-			widthProto, colProto,
-			widthModels, colModels,
-			colNotes)
-		fmt.Printf("  %s  %s  %s  %s  %s\n",
-			strings.Repeat("-", widthAgent),
-			strings.Repeat("-", widthType),
-			strings.Repeat("-", widthProto),
-			strings.Repeat("-", widthModels),
-			"")
-
-		for _, a := range agents {
-			supported, _ := discover.ProtocolExamples(a.Name)
-			notes := a.Notes
-			if notes == "" && a.IsConfigurable {
-				notes = "可通过代理切换任意上游模型"
-			} else if notes == "" && !a.IsConfigurable {
-				notes = "不可通过代理配置"
-			}
-			if len(notes) > widthNotes {
-				notes = notes[:widthNotes-1] + "..." 
-			}
-
-			fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %s\n",
-				widthAgent, a.Name,
-				widthType, a.Category,
-				widthProto, a.Protocol,
-				widthModels, supported,
-				notes)
-		}
-		fmt.Println()
-
-		// --update: query upstream model list from proxy
-		if agentModelsUpdate {
-			p, err := getProxySettings()
-			if err != nil {
-				fmt.Printf("未检测到 AI 代理，无法查询上游模型列表: %v\n", err)
-				fmt.Printf("请使用 --url 和 --key 指定代理，或确保代理正在运行\n")
-			} else {
-				fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
-				models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
-				if len(models) > 0 {
-					sorted := make([]string, len(models))
-					copy(sorted, models)
-					sort.Strings(sorted)
-					fmt.Printf("上游可用模型 (%d)：\n", len(models))
-					fmt.Println(strings.Repeat("-", 60))
-					for idx, m := range sorted {
-						if idx%4 == 0 {
-							fmt.Printf("  ") 
-						}
-						display := m
-						if len(display) > 28 {
-							display = display[:27] + "."
-						}
-						fmt.Printf("%-30s", display)
-						if idx%4 == 3 {
-							fmt.Println()
-						}
-					}
-					fmt.Println()
-				} else {
-					fmt.Println("上游模型列表为空。")
-				}
-			}
-		}
-
+		discover.RenderModelTable(agents)
 		return nil
 	},
 }
@@ -935,8 +829,7 @@ func initAgentCmd() {
 
 	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "指定 agent 名称（可选，不指定则显示所有）")
 
-	agentModelsCmd.Flags().BoolVarP(&agentModelsUpdate, "update", "u", false, "查询代理最新上游模型列表")
-	agentCmd.AddCommand(agentDiscoverCmd)
+		agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentUninstallCmd)
@@ -1856,6 +1749,50 @@ func initConfCmd() {
 	confCmd.AddCommand(confRollbackCmd)
 	confCmd.AddCommand(confDiffCmd)
 	confCmd.AddCommand(confBranchCmd)
+
+var confUpstreamModelsCmd = &cobra.Command{
+	Use:   "upstream-models",
+	Short: "查询 AI 代理上游模型列表",
+	Long: `查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
+
+该命令用于在自动配置前确认代理当前实际接入的模型。
+支持通过全局 --url / --key 指定代理，或使用自动检测。
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := getProxySettings()
+		if err != nil {
+			return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
+		}
+		fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
+		models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+		if len(models) == 0 {
+			fmt.Println("上游模型列表为空。")
+			return nil
+		}
+		sorted := make([]string, len(models))
+		copy(sorted, models)
+		sort.Strings(sorted)
+		fmt.Printf("上游可用模型 (%d)：\n", len(models))
+		fmt.Println(strings.Repeat("-", 60))
+		for idx, m := range sorted {
+			if idx%4 == 0 {
+				fmt.Printf("  ")
+			}
+			display := m
+			if len(display) > 28 {
+				display = display[:27] + "."
+			}
+			fmt.Printf("%-30s", display)
+			if idx%4 == 3 {
+				fmt.Println()
+			}
+		}
+		fmt.Println()
+		return nil
+	},
+}
+
+	confCmd.AddCommand(confUpstreamModelsCmd)
 }
 
 // ========== INIT ==========
