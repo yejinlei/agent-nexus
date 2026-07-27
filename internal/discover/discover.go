@@ -180,6 +180,45 @@ func GetRegistry() []AgentPath {
     return registry.agents
 }
 
+// ProtocolExamples returns the model families natively supported by an agent's
+// protocol or built-in AI backend. This is independent of any proxy or config.
+func ProtocolExamples(agentName string) (modelFamilies string, examples string) {
+	examplesMap := map[string]string{
+		"codex":       "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"claude":      "OpenAI/Anthropic (claude-sonnet, claude-3.5, gpt-5.5, glm-5.2, 等 Anthropic & OpenAI 兼容模型)",
+		"deepseek":    "OpenAI/Anthropic (deepseek-v4, deepseek-v4-flash, gpt-5.5, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"opencode":    "OpenAI/Anthropic (gpt-5.5, glm-5.2, claude-sonnet, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"cursor":      "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"openclaw":    "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"openclaude":  "OpenAI/Anthropic (claude-sonnet, gpt-5.5, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"codebuddy":   "OpenAI/Anthropic (claude-sonnet, gpt-5.5, glm-5.2, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"lmstudio":    "本地 LLM (通过 localhost 加载的任意模型，如 llama, qwen, mistral 等)",
+		"clawx":       "OpenAI/Anthropic (gpt-5.5, glm-5.2, claude-sonnet, sensenova-6.7-flash-lite, 等 OpenAI 兼容模型)",
+		"kimi":        "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"hermes":      "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"kiro":        "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"grok":        "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"qoder":       "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"trae":        "OpenAI/Anthropic (gpt-5.5, claude-sonnet, glm-5.2, sensenova-6.7-flash-lite, 等 ACP 协议兼容模型)",
+		"antigravity": "Google Gemini (Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash 等 Google Gemini 模型)",
+		"copilot":     "GitHub Copilot (GPT-4, Claude 等 GitHub Copilot 集成模型，取决于 GitHub 账号)",
+		"deveco":      "华为 OpenCode (华为大模型，自有模型目录)",
+		"gemini":      "Google Gemini (Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash 等，通过 Google OAuth)",
+		"pi":          "Inflection Pi (Pi CLI 自有模型)",
+		"qoder-ide":     "自有 AI 后端 (具体模型由 agent 内部决定)",
+		"trae-ide":      "自有 AI 后端 (具体模型由 agent 内部决定)",
+		"codebuddy-ide": "自有 AI 后端 (具体模型由 agent 内部决定)",
+		"windsurf":      "自有 AI 后端 (具体模型由 agent 内部决定)",
+		"zed":           "无内置 AI Agent (N/A)",
+	}
+	v, ok := examplesMap[agentName]
+	if !ok {
+		return "N/A", "N/A"
+	}
+	return v, ""
+}
+
+
 func RenderTable(agents []AgentInfo) {
     if len(agents) == 0 {
         fmt.Println("No AI agents found.")
