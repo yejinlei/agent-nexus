@@ -1,142 +1,249 @@
 # agent-nexus — AI Agent 配置自动化工具
 
-```powershell
-$ ps aux | grep -E 'codex|claude|kimi|deepseek|cursor'
- codex     80382  0.2  codex@localhost   ~/.codex/config.toml      → api.anthropic.com
- claude    80383  0.3  claude@localhost  ~/.claude/settings.json   → api.anthropic.com
- kimi      80384  0.1  kimi@localhost    ~/.kimi/config.toml       → moonshot.cn
- deepseek  80385  0.2  deepseek@local    ~/.deepseek/config.toml   → api.deepseek.com
- cursor    80386  0.4  cursor@localhost  Cursor/User/settings.json → api.openai.com
- opencode  80387  0.1  opencode@local    ~/.config/opencode/*.jsonc → ...
-```
+## 一句话
 
-每个 agent 都是自己的微服务，配置文件格式各异，API 端点各不相同。换代理？改 6 个文件。加 agent？再改一个。忘了备份？原地爆炸。
+agent-nexus 是 coding agent 配置领域的 `/etc/hosts`：一条命令，把散落在本机各处的 LLM endpoint 和 API Key 统一重定向到一个 AI 消息网关。
 
-**agent-nexus 是这台机器上所有 coding agent 的 `/etc/hosts`。一条命令，把所有 agent 的上游端点统一重定向到一个 AI 消息网关。**
-
----
+当前支持 26 个 agent（16 个可配置 + 10 个不可配置），覆盖 CLI 和 IDE 两大类。
 
 ## 架构
 
 ![agent-nexus 架构](docs/architecture.svg)
 
-- **AI 消息网关**（proxy）：统一上游端点，负责模型路由、计费、限流。你只需要关心"用哪个模型"，不需要关心"调哪个 API"。
-- **Agent 运行时**（agent）：你日常使用的 coding 工具。各有配置格式，但本质上都是"调一个 LLM endpoint"。
-- **agent-nexus**：中间件。扫描本机 agent → 检测代理 → 自动备份 → 重写配置 → 建立模型路由。
+- **AI 消息网关（proxy）**：统一上游端点，负责模型路由、计费、限流。
+- **Agent 运行时**：你日常使用的 coding 工具（codex, claude, kimi, cursor 等），各有配置格式，但本质上都是"调一个 LLM endpoint"。
+- **agent-nexus**：中间件 / 配置中枢。扫描本机 agent → 检测代理 → 自动备份 → 写入配置 → 建立模型路由。
+- **下游协作平台**（Multica、Cursor 等）：直接复用已配置好的 agent，无需各自重复配置代理和 Key。
 
----
+## 工作流
 
-## 一句话
+```
+① 检查运行时依赖  →  agent-nexus pre check / install
+② 安装 Agent 运行时 →  agent-nexus agent list / install
+③ 统一配置所有 Agent  →  agent-nexus conf set --agents all
+④ 验证配置        →  agent-nexus agent discover
+```
 
-agent-nexus = **coding agent 配置领域的 `git rebase`**：一条命令，把散落在各处的 endpoint 和 key 全部重定向到同一个上游。
-
----
-
-## 工作流：从安装到多 Agent 协作
-
-![agent-nexus 工作流全景](docs/flowchart.svg)
-
-一条完整的自动化链路：
+完整自动化链路（详见 [MANUAL.md](MANUAL.md)）：
 
 | 阶段 | 动作 | 命令 |
 |------|------|------|
-| **① 安装 Agent 运行时** | 一键安装 codex/claude/kimi 等 19 个 agent | `agent-nexus agent list/install/uninstall/update` |
-| **② agent-nexus 自动配置** | 扫描 → 检测代理 → 备份 → 配置 → 模型路由 | `agent-nexus conf bak`（一键完成） |
-| **③ 多 Agent 协作平台** | Multica、Orca、cursor 等平台复用已配置 agent | 无需额外配置，直接使用 |
-
-**agent-nexus 的位置**：中间件 / 配置中枢。所有 agent 运行时的安装和配置都通过它完成，所有下游协作平台只需调用已配置好的 agent 即可——无需每个平台各自配置代理、Key、模型映射。
-
-> 详细用法见 [MANUAL.md](MANUAL.md)。
-
----
-
-## 安装 Agent 运行时
-
-agent-nexus 自带 agent 运行时安装器，支持 npm、pip、官方下载页、GitHub release 等多种安装方式：
-
-```powershell
-# 看看有哪些 agent 可以装
-agent-nexus agent list
-
-# 装一个
-agent-nexus agent install codex
-
-# 装全家桶（自动检测平台，选 npm/pip/下载页）
-agent-nexus agent install --all
-```
-
-安装方式根据平台自动适配：
-
-| 包类型 | 示例 | 命令 |
-|--------|------|------|
-| npm 包 | codex, claude, openclaude, copilot, pi, lmstudio, gemini | `npm install -g @openai/codex` |
-| pip 包 | 部分 Python agent | `pip install <package>` |
-| 官方下载页 | kimi, cursor, hermes, trae, codebuddy, clawx, grok, kiro, qoder, deveco | 浏览器打开对应页面 |
-| GitHub release | opencode, openclaw | 自动下载对应平台的二进制 |
-
-`--all` 会扫描本机平台（Windows/macOS/Linux），为每个 CLI agent 选择最合适的安装方式，依次执行。装完后跑 `agent-nexus agent discover` 确认：
-
-```
-$ agent-nexus agent discover
-  Agent          Type  Protocol           Status         Configured
-  -------------  ----  -----------------  -------------  ----------
-  codex          cli   OpenAI Compatible  Installed      Yes
-  claude         cli   OpenAI Compatible  Installed      Yes
-  kimi           cli   ACP                Installed      Yes
-  ...
-```
-
-卸载和更新同样方便：
-
-```powershell
-agent-nexus agent uninstall codex   # 卸载
-agent-nexus agent update codex      # 更新到最新版本
-```
-
-详细用法见 [MANUAL.md](MANUAL.md#agent-运行时管理)。
-
----
+| ① 检查运行时依赖 | node/npm、python/pip、git | `agent-nexus pre check` |
+| ② 安装 Agent 运行时 | codex/claude/kimi 等 26 个 agent | `agent-nexus agent install codex` |
+| ③ 统一配置 | 检测代理 → 备份 → 写入配置 | `agent-nexus conf set --agents all` |
+| ④ 验证 | 扫描 + 显示配置状态 | `agent-nexus agent discover` |
 
 ## 快速开始
 
-配置所有已安装的 AI coding agent（Grok, Copilot, Cline, Devin, Aider 等）：
-
 ```powershell
-# 1. 创建配置快照（备份）
-agent-nexus conf bak
+# 1. 检查并安装运行时依赖
+agent-nexus pre check
+agent-nexus pre install
 
-# 2. 配置所有 agent（先备份，再写入代理配置）
-agent-nexus agent configure --agents all
+# 2. 安装需要的 agent 运行时
+agent-nexus agent list
+agent-nexus agent install codex
+agent-nexus agent install claude
 
-# 3. 验证配置结果
+# 3. 统一配置所有已安装的 agent（先备份，再写入代理配置）
+agent-nexus conf set --agents all
+
+# 4. 验证
 agent-nexus agent discover
+agent-nexus agent discover -v   # 显示每个 agent 的模型支持详情
 ```
 
----
+## 命令总览
+
+```
+agent-nexus [command]
+
+命令组：
+  agent       Agent 管理（发现、安装、卸载、更新、配置、模型）
+  conf        配置管理（备份、快照、回滚、分支、统一配置入口）
+  proxy       AI 消息网关管理（检测、路由、嗅探、代理数据库）
+  pre         检查/安装 agent 运行时依赖工具
+  completion  生成 shell 自动补全脚本
+
+全局选项：
+  --url   直接指定代理 URL（覆盖自动检测）
+  --key   直接指定代理 API Key（覆盖自动检测）
+  --home  指定用户主目录（默认自动检测）
+```
+
+详细用法见 [MANUAL.md](MANUAL.md)。
+
+## 支持的 Agent（26 个）
+
+### 可配置（通过代理转发）— 16 个
+
+| Agent | 类型 | 协议 | 说明 |
+|-------|------|------|------|
+| codex | CLI | OpenAI Compatible | 任意上游模型 |
+| claude | CLI | OpenAI Compatible | 任意上游模型 |
+| kimi | CLI | ACP | 需代理路由映射 |
+| deepseek | CLI | OpenAI Compatible | 任意上游模型 |
+| opencode | CLI | OpenAI Compatible | 任意上游模型 |
+| openclaw | CLI | OpenAI Compatible | 任意上游模型 |
+| openclaude | CLI | OpenAI Compatible | .env 格式配置 |
+| cursor | IDE | OpenAI Compatible | VS Code 派生 |
+| codebuddy | CLI | OpenAI Compatible | Claude Code 兼容 |
+| hermes | CLI | ACP | 需代理路由映射 |
+| kiro | CLI | ACP | 需代理路由映射 |
+| grok | CLI | ACP | 需代理路由映射 |
+| qoder | CLI | ACP | 需代理路由映射 |
+| trae | CLI | ACP | 需代理路由映射 |
+| lmstudio | CLI | OpenAI Compatible | 本地 LLM（localhost） |
+| clawx | IDE | OpenAI Compatible | 任意上游模型 |
+
+### 不可配置（无外部模型配置字段）— 10 个
+
+| Agent | 类型 | 说明 |
+|-------|------|------|
+| antigravity | CLI | Google Gemini，OAuth/API key 认证 |
+| copilot | CLI | 模型由 GitHub 账号权益决定 |
+| deveco | CLI | 华为 OpenCode 引擎，自有模型目录 |
+| gemini | CLI | Google Gemini CLI，Google auth |
+| pi | CLI | Inflection Pi，npm 包 |
+| qoder-ide | IDE | 自有 AI 后端 |
+| trae-ide | IDE | 自有 AI 后端 |
+| codebuddy-ide | IDE | 自有 AI 后端 |
+| windsurf | IDE | 自有 AI 后端 |
+| zed | IDE | 无内置 AI Agent |
+
+## 安装 Agent 运行时
+
+agent-nexus 自带安装器，支持 npm、pip、官方下载页、GitHub release 等多种方式，根据平台（Windows/macOS/Linux）自动选择：
+
+```powershell
+# 查看可安装的 agent
+agent-nexus agent list
+
+# 安装单个 agent
+agent-nexus agent install codex
+
+# 安装全部 CLI agent
+agent-nexus agent install --all
+
+# 卸载 / 更新
+agent-nexus agent uninstall codex
+agent-nexus agent update codex
+```
+
+安装后运行 `agent-nexus agent discover` 确认已安装 agent 列表和配置状态。
+
+## 统一配置入口：`conf set`
+
+`agent-nexus conf set` 是推荐的统一配置入口，整合了备份和配置写入：
+
+```powershell
+# 配置所有已安装 agent（推荐）
+agent-nexus conf set --agents all
+
+# 只配置部分 agent
+agent-nexus conf set --agents codex,claude
+
+# 从代理数据库选择代理
+agent-nexus conf set --agents all --db-id 1
+
+# 交互式确认模型映射
+agent-nexus conf set --agents all --interactive
+
+# 预览模式（不实际写入）
+agent-nexus conf set --agents all --dry-run
+
+# 覆盖模型映射
+agent-nexus conf set --agents all --models "codex=gpt-5.5"
+```
+
+代理来源优先级（从高到低）：
+
+1. `--url` + `--key` — 直接使用，跳过检测和 DB
+2. `--db-id <n>` — 从 `proxies.db` 按 ID 查找
+3. `--db` — 从 `proxies.db` 交互/非交互选择
+4. 自动检测 — `proxy.Detect()`（CCX Desktop / CC-Switch）
+
+> 旧命令 `agent configure` 和 `conf auto` 仍可用，但已弃用，建议迁移到 `conf set`。
+
+## 代理支持
+
+- **CCX Desktop**（自动检测）：读取 `~\AppData\Roaming\ccx-desktop\.config\config.json` 和 `.env`，默认监听 `127.0.0.1:3688`
+- **CC-Switch**（自动检测）：读取 `~\AppData\Roaming\cc-switch\.config\config.json` 和 `.env`
+- **自定义代理**（手动）：通过 `--url` + `--key` 指定任意代理地址
+- **代理数据库**：通过 `proxy db add` 嗅探并保存代理配置，供 `conf set --db-id` 复用
+
+## 配置版本化管理
+
+类 Git 的配置快照系统，支持快照、分支、差异对比和回滚：
+
+```
+agent-nexus conf backup           # 创建只读快照（推荐替代 conf bak）
+agent-nexus conf backup --dry-run # 预览将被备份的文件
+agent-nexus conf history          # 列出所有快照
+agent-nexus conf diff --old 1 --new 2  # 对比两个快照
+agent-nexus conf rollback -s latest    # 回滚到最新快照
+agent-nexus conf branch list            # 列出分支
+```
+
+快照存储结构：
+
+```
+~/.codex/backups/
+├── versioning.json                 # 元数据注册表（快照索引 + 分支信息）
+└── snapshots/
+    ├── 2026-07-17_14-30-00/        # 快照 1（原始备份文件）
+    └── ...
+```
+
+> 旧命令 `conf bak`、`conf show` 仍可用，但已弃用，请迁移到 `conf backup`。
+
+## 查看模型信息
+
+```powershell
+# 显示所有 agent 原生支持的模型
+agent-nexus agent models
+
+# 查询特定 agent
+agent-nexus agent models --name codex
+```
+
+## 查询上游模型列表
+
+配置前确认代理当前实际接入的模型：
+
+```powershell
+agent-nexus conf upstream-models
+agent-nexus conf upstream-models --url http://127.0.0.1:3688/v1 --key sk-xxx
+```
 
 ## 项目结构
 
 ```
 agent-nexus/
 ├── main.go                          # 入口
+├── go.mod / go.sum                  # Go 模块定义
 ├── cmd/
-│   └── root.go                      # Cobra CLI 命令定义（agent/proxy/conf 命令组）
+│   ├── root.go                      # Cobra CLI 命令定义
+│   ├── runconfauto.go               # conf auto（旧，兼容）
+│   ├── runconfbackup.go             # conf backup
+│   └── runconfset.go                # conf set（统一配置入口）
 └── internal/
     ├── agent/                       # 各 agent 配置写入器（可插拔）
     ├── backup/                      # 备份逻辑
     ├── color/                       # 终端彩色输出
-    ├── discover/                    # 自动发现 agent
     ├── db/                          # SQLite 代理配置数据库
+    ├── discover/                    # 自动发现 agent
     ├── install/                     # agent 运行时安装
     ├── model/                       # 模型路由表构建
-    ├── proxy/                       # 代理检测（CCX / 自定义）
+    ├── pre/                         # 运行时依赖检查与安装
+    ├── proxy/                       # 代理检测（CCX / CC-Switch / 自定义）
     ├── sniff/                       # LLM endpoint 嗅探
     └── versioning/                  # 配置版本化（快照/分支/差异）
 ```
 
 ## 扩展新 Agent
 
-实现 `agent.ConfigWriter` 接口并注册到 `WriterRegistry` 即可，参考 [MANUAL.md](MANUAL.md#扩展新-agent)。
+实现 `agent.ConfigWriter` 接口并注册到 `WriterRegistry` 即可，详见 [MANUAL.md](MANUAL.md#扩展新-agent)。
 
 ## License
 

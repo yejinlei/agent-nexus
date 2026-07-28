@@ -14,12 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"agent-nexus/internal/agent"
-	"agent-nexus/internal/backup"
 	"agent-nexus/internal/db"
 	"agent-nexus/internal/discover"
 	"agent-nexus/internal/install"
 	"agent-nexus/internal/model"
+	"agent-nexus/internal/pre"
 	"agent-nexus/internal/proxy"
 	"agent-nexus/internal/sniff"
 	"agent-nexus/internal/versioning"
@@ -63,12 +62,14 @@ var rootCmd = &cobra.Command{
   agent-nexus proxy sniff           嗅探 LLM 提供商消息格式与模型
   agent-nexus proxy db add          嗅探并保存代理配置到数据库
   agent-nexus proxy db query        查询代理配置（可选按 ID 或 URL 过滤）
-  agent-nexus conf bak              备份所有配置（自动版本化）
+  agent-nexus conf backup               手动备份（替代 conf bak/show）
   agent-nexus conf history          列出所有配置快照
-  agent-nexus conf show             创建配置快照
   agent-nexus conf rollback -s <id> 恢复到指定快照
   agent-nexus conf diff --old --new 对比两个快照的差异
+  agent-nexus conf set --agents all  统一配置入口
   agent-nexus conf branch           管理配置分支
+  agent-nexus pre check              检查 agent 运行时依赖工具状态
+  agent-nexus pre install            安装缺失的 agent 运行时依赖工具
 
 全局选项：
   --home string   指定用户目录
@@ -85,6 +86,8 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(proxyCmd)
 	rootCmd.AddCommand(confCmd)
+	rootCmd.AddCommand(preCmd)
+	initPreCmd()
 }
 
 func userHomeDir() string {
@@ -100,6 +103,64 @@ func getProxySettings() (*proxy.Proxy, error) {
 		return proxy.FromFlags(proxyURL, proxyKey)
 	}
 	return proxy.Detect()
+}
+
+// ========== PRE COMMAND ==========
+
+// preCmd manages pre-install dependency checks for agent runtimes.
+var preCmd = &cobra.Command{
+	Use:   "pre",
+	Short: "检查/安装 agent 运行时依赖工具",
+	Long:  "检查并安装运行 AI agent 所需的依赖工具（node/npm、python/pip、git）。",
+}
+
+var preTool string = "all"
+
+var preCheckCmd = &cobra.Command{
+	Use:   "check [--tool node|pip|git|all]",
+	Short: "检查依赖工具状态",
+	Long:  "打印依赖工具的状态表。使用 --tool 筛选单个工具。",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		filtered := pre.GetByTool(preTool)
+		if filtered == nil {
+			return fmt.Errorf(`无效的 --tool 值 %s，可选: node, pip, git, all`, preTool)
+		}
+		statuses := make([]pre.Status, len(filtered))
+		for i, d := range filtered {
+			statuses[i] = d.Check()
+		}
+		pre.RenderStatusTable(filtered, statuses)
+		return nil
+	},
+}
+
+var preInstallCmd = &cobra.Command{
+	Use:   "install [--tool node|pip|git|all]",
+	Short: "安装缺失的依赖工具",
+	Long:  "尝试通过 winget/apt/yum/brew 自动安装缺失的依赖工具。失败时打印手动安装提示。",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		filtered := pre.GetByTool(preTool)
+		if filtered == nil {
+			return fmt.Errorf(`无效的 --tool 值 %s，可选: node, pip, git, all`, preTool)
+		}
+		fmt.Printf("正在安装依赖工具（--tool=%s）...\n", preTool)
+		fmt.Println(pre.Separator(60))
+		ok, fail := pre.InstallMissing(preTool)
+		if ok > 0 {
+			fmt.Printf("\n%s %d 个工具已就绪\n", pre.SuccessIcon(), ok)
+		}
+		if fail > 0 {
+			fmt.Printf("%s %d 个工具安装失败，请手动安装\n", pre.FailIcon(), fail)
+		}
+		return nil
+	},
+}
+
+func initPreCmd() {
+	preCheckCmd.Flags().StringVar(&preTool, "tool", "all", "筛选工具: node, pip, git, all")
+	preInstallCmd.Flags().StringVar(&preTool, "tool", "all", "筛选工具: node, pip, git, all")
+	preCmd.AddCommand(preCheckCmd)
+	preCmd.AddCommand(preInstallCmd)
 }
 
 // ========== AGENT GROUP ==========
@@ -123,7 +184,6 @@ var agentCmd = &cobra.Command{
 var discoverVerbose bool
 
 var agentModelsName string
-
 
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
@@ -513,6 +573,8 @@ var agentConfigureCmd = &cobra.Command{
 	Short: "备份后配置指定 agent（需 --agents）",
 	Long: `配置指定 agent 运行时，先自动备份，再写入 AI 代理配置。
 
+DEPRECATED: 此命令已弃用，请使用 "agent-nexus conf set" 作为统一配置入口。
+
 必选参数:
   --agents  要配置的 agent（逗号分隔），或用 all 配置所有已安装 agent
 
@@ -532,219 +594,21 @@ var agentConfigureCmd = &cobra.Command{
 			return fmt.Errorf("--agents 为必选参数，使用 all 配置所有已安装 agent")
 		}
 
-		home := userHomeDir()
-		destRoot := filepath.Join(home, ".codex", "backups")
-
-		fmt.Println("[1/6] 检测 AI 代理...")
-		p, err := getProxySettings()
-		if err != nil {
-			fmt.Printf("未检测到 AI 代理配置: %v\n", err)
-			fmt.Println("请确保 AI 代理已安装并运行，或使用 --url / --key 指定")
-			return err
-		}
-		fmt.Printf("  代理类型: %s  地址: %s\n", p.Source, p.BaseURL)
+		fmt.Println("WARNING: 'agent configure' 已弃用，请使用 'agent-nexus conf set'。")
 		fmt.Println()
 
-		fmt.Println("  正在获取上游模型列表...")
-		upstreamModels := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
-		if len(upstreamModels) > 0 {
-			fmt.Printf("  上游可用模型 (%d)\n", len(upstreamModels))
-		} else {
-			fmt.Println("  无法获取上游模型列表（将使用代理模型映射）")
+		// Delegate to unified runConfSet with branch="main" and legacy message.
+		opts := runConfSetOpts{
+			agents:  configureAgents,
+			url:     proxyURL,
+			key:     proxyKey,
+			models:  configureModels,
+			branch:  "main",
+			message: "agent configure: " + configureAgents,
 		}
-		fmt.Println()
-
-		fmt.Println("[2/6] 扫描已安装 agent...")
-		agents := discover.Discover()
-		fmt.Printf("  发现 %d 个 agent\n\n", len(agents))
-
-		var selectedNames []string
-		if strings.EqualFold(configureAgents, "all") {
-			for _, a := range agents {
-				if a.HasConfig && a.IsConfigurable {
-					selectedNames = append(selectedNames, a.Name)
-				}
-			}
-		} else {
-			selectedNames = strings.Split(configureAgents, ",")
-			for i, n := range selectedNames {
-				selectedNames[i] = strings.TrimSpace(n)
-			}
-			seen := map[string]bool{}
-			var deduped []string
-			for _, n := range selectedNames {
-				if !seen[n] {
-					seen[n] = true
-					deduped = append(deduped, n)
-				}
-			}
-			selectedNames = deduped
-		}
-		sort.Strings(selectedNames)
-		fmt.Printf("  目标 agent: %s\n\n", strings.Join(selectedNames, ", "))
-
-		nameToAgent := map[string]discover.AgentInfo{}
-		for _, a := range agents {
-			nameToAgent[a.Name] = a
-		}
-
-		var toConfigure []discover.AgentInfo
-		for _, name := range selectedNames {
-			a, ok := nameToAgent[name]
-			if !ok {
-				fmt.Printf("  %s: 未检测到该 agent，跳过\n", name)
-				continue
-			}
-			if !a.HasConfig {
-				fmt.Printf("  %s: 未安装，跳过\n", name)
-				continue
-			}
-			if !a.IsConfigurable {
-				fmt.Printf("  %s: 不可配置，跳过\n", name)
-				continue
-			}
-			toConfigure = append(toConfigure, a)
-		}
-
-		if len(toConfigure) == 0 {
-			fmt.Println("\n没有可配置的 agent，退出。")
-			return nil
-		}
-
-		fmt.Println("[3/6] 解析模型映射...")
-		resolutions := model.ResolveAllModels(upstreamModels, p.ModelMap)
-		fmt.Println()
-
-		overrides := make(map[string]string)
-		if configureModels != "" {
-			for _, pair := range strings.Split(configureModels, ",") {
-				pair = strings.TrimSpace(pair)
-				if idx := strings.Index(pair, "="); idx > 0 {
-					agt := strings.TrimSpace(pair[:idx])
-					m := strings.TrimSpace(pair[idx+1:])
-					if m != "" {
-						overrides[agt] = m
-					}
-				}
-			}
-		}
-
-		fmt.Println("  模型映射预览:")
-		fmt.Printf("  %-14s %-30s [%s]\n", "Agent", "模型", "来源")
-		fmt.Println(strings.Repeat("-", 70))
-		for _, r := range resolutions {
-			displayModel := r.Model
-			src := r.Source
-			if ov, ok := overrides[r.Agent]; ok {
-				displayModel = ov
-				src = "override"
-			}
-			if src == "upstream" {
-				src = "上游直接"
-			} else if src == "proxy-map" {
-				src = "代理重定向"
-			} else if src == "default" {
-				src = "默认"
-			}
-			fmt.Printf("  %-14s %-30s [%s]\n", r.Agent, displayModel, src)
-			if r.Notes != "" {
-				fmt.Printf("     %s\n", r.Notes)
-			}
-		}
-		fmt.Println()
-
-		fmt.Println("[4/6] 创建配置快照...")
-		reg := versioning.LoadRegistry(destRoot)
-		var snapshotPaths []string
-		for _, a := range toConfigure {
-			if a.HasConfig {
-				snapshotPaths = append(snapshotPaths, a.ConfigPath)
-			}
-		}
-		_, err = reg.CreateSnapshot(snapshotPaths, fmt.Sprintf("自动配置快照: %s", strings.Join(selectedNames, ",")), "")
-		if err != nil {
-			fmt.Printf("  快照创建失败: %v\n", err)
-		} else {
-			fmt.Printf("  快照已创建（可在配置失败时回滚）\n")
-		}
-		fmt.Println()
-
-		fmt.Println("[5/6] 备份现有配置...")
-		var backupPaths []string
-		for _, a := range toConfigure {
-			if a.HasConfig {
-				backupPaths = append(backupPaths, a.ConfigPath)
-			}
-		}
-		if len(backupPaths) > 0 {
-			results, err := backup.Backup(backupPaths, filepath.Join(home, ".codex"))
-			if err != nil {
-				fmt.Printf("  备份失败: %v\n", err)
-			} else {
-				for _, result := range results {
-					if result.Success {
-						fmt.Printf("  %s\n", filepath.Base(result.Source))
-					}
-				}
-			}
-		}
-		fmt.Println()
-
-		fmt.Println("[6/6] 配置 agent...")
-		writerReg := agent.NewWriterRegistry()
-		configured := 0
-		skipped := 0
-
-		for _, a := range toConfigure {
-			writer := writerReg.Get(a.Name)
-			if writer == nil {
-				fmt.Printf("  %s: 无对应配置写入器\n", a.Name)
-				skipped++
-				continue
-			}
-			if !writer.CanConfigure(p) {
-				fmt.Printf("  %s: 当前代理不支持配置\n", a.Name)
-				skipped++
-				continue
-			}
-
-			resolvedModel, found := model.ModelToWrite(resolutions, overrides, a.Name)
-			if !found {
-				resolvedModel = ""
-			}
-
-			err := writer.Configure(a.ConfigPath, p, resolvedModel)
-			if err != nil {
-				fmt.Printf("  %s: %v\n", a.Name, err)
-				fmt.Println("  提示: 使用 'agent-nexus conf rollback -s latest' 回滚")
-				skipped++
-			} else {
-				wmodel, wsrc, wnotes := writer.StatusModel(a.ConfigPath)
-				_, status := writer.Status(a.ConfigPath)
-				fmt.Printf("  %s  %s [%s: %s]\n", a.Name, status, wmodel, wsrc)
-				if wnotes != "" {
-					fmt.Printf("     %s\n", wnotes)
-				}
-				configured++
-			}
-		}
-
-		fmt.Printf("\n配置完成: %d 个 agent 已配置, %d 个跳过\n", configured, skipped)
-		if skipped > 0 {
-			fmt.Println("如需回滚: agent-nexus conf rollback -s latest")
-		}
-
-		fmt.Println("\n更新后模型路由表:")
-		routing := model.BuildRoutingTable(p)
-		for _, r := range routing {
-			fmt.Printf("  %-10s %-30s  %-30s [%s]\n", r.Agent, r.Model, r.Target, r.Source)
-		}
-		fmt.Println()
-		return nil
+		return runConfSet(opts)
 	},
 }
-
-
 
 var agentModelsCmd = &cobra.Command{
 	Use:   "models [name]",
@@ -829,7 +693,7 @@ func initAgentCmd() {
 
 	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "指定 agent 名称（可选，不指定则显示所有）")
 
-		agentCmd.AddCommand(agentDiscoverCmd)
+	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentUninstallCmd)
@@ -1187,7 +1051,6 @@ var proxyDbQueryCmd = &cobra.Command{
 	},
 }
 
-
 var proxyDbCheckCmd = &cobra.Command{
 	Use:   "check <id>",
 	Short: "嗅探代理配置记录是否仍然有效",
@@ -1336,7 +1199,7 @@ var backupMessage string
 
 var confBakCmd = &cobra.Command{
 	Use:   "bak",
-	Short: "备份所有 agent 配置文件（带版本信息）",
+	Short: "备份所有 agent 配置文件（已弃用，请使用 conf backup）",
 	Long: `备份所有已安装 agent 的配置文件，自动生成版本化快照。
 
 快照元数据存储在 ~/.codex/backups/versioning.json
@@ -1348,6 +1211,7 @@ var confBakCmd = &cobra.Command{
   agent-nexus conf bak --message "配置更新前快照"                 # 添加提交信息
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("[WARNING] 'conf bak' 已弃用，请使用 'conf backup' 代替\n")
 		home := userHomeDir()
 		destRoot := filepath.Join(home, ".codex", "backups")
 
@@ -1451,7 +1315,7 @@ var snapshotMessage string
 
 var confShowCmd = &cobra.Command{
 	Use:   "show",
-	Short: "创建配置快照（快照/提交）",
+	Short: "创建配置快照（已弃用，请使用 conf backup --message）",
 	Long: `创建配置快照，类似 git commit。快照包含所有可配置 agent 的当前配置内容和元数据。
 
 快照会自动保存到 ~/.codex/backups/snapshots/<时间戳>/
@@ -1462,6 +1326,7 @@ var confShowCmd = &cobra.Command{
   agent-nexus conf show --branch dev --message "开发分支配置"
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("[WARNING] 'conf show' 已弃用，请使用 'conf backup --message <msg>' 代替\n")
 		home := userHomeDir()
 		destRoot := filepath.Join(home, ".codex", "backups")
 
@@ -1725,10 +1590,14 @@ var confBranchCmd = &cobra.Command{
 }
 
 func initConfCmd() {
-	confBakCmd.Flags().StringVar(&backupBranch, "branch", "main", "快照所属分支名称")
-	confBakCmd.Flags().StringVar(&backupMessage, "message", "", "快照提交信息")
 
-	confShowCmd.Flags().StringVar(&snapshotBranch, "branch", "main", "快照所属分支名称")
+	initConfSetCmd()
+	initConfBackupCmd()
+	initConfAutoCmd()
+	confBakCmd.Flags().StringVar(&backupBranch, "branch", "main", "快照所属分支名称（已弃用）")
+	confBakCmd.Flags().StringVar(&backupMessage, "message", "", "快照提交信息（已弃用）")
+
+	confShowCmd.Flags().StringVar(&snapshotBranch, "branch", "main", "[已弃用] 快照所属分支名称，请使用 conf backup --branch")
 	confShowCmd.Flags().StringVar(&snapshotMessage, "message", "", "快照提交信息")
 
 	confRollbackCmd.Flags().StringVarP(&rollbackID, "snapshot", "s", "", "要恢复到的快照 ID（输入 'latest' 恢复最新快照）")
@@ -1744,53 +1613,56 @@ func initConfCmd() {
 	confBranchCmd.Flags().BoolVar(&branchShow, "show", false, "显示当前分支信息")
 
 	confCmd.AddCommand(confBakCmd)
+	confCmd.AddCommand(confBackupCmd)
 	confCmd.AddCommand(confHistoryCmd)
 	confCmd.AddCommand(confShowCmd)
 	confCmd.AddCommand(confRollbackCmd)
 	confCmd.AddCommand(confDiffCmd)
 	confCmd.AddCommand(confBranchCmd)
+	confCmd.AddCommand(confSetCmd)
+	confCmd.AddCommand(confAutoCmd)
 
-var confUpstreamModelsCmd = &cobra.Command{
-	Use:   "upstream-models",
-	Short: "查询 AI 代理上游模型列表",
-	Long: `查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
+	var confUpstreamModelsCmd = &cobra.Command{
+		Use:   "upstream-models",
+		Short: "查询 AI 代理上游模型列表",
+		Long: `查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
 
 该命令用于在自动配置前确认代理当前实际接入的模型。
 支持通过全局 --url / --key 指定代理，或使用自动检测。
 `,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := getProxySettings()
-		if err != nil {
-			return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
-		}
-		fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
-		models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
-		if len(models) == 0 {
-			fmt.Println("上游模型列表为空。")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := getProxySettings()
+			if err != nil {
+				return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
+			}
+			fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
+			models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
+			if len(models) == 0 {
+				fmt.Println("上游模型列表为空。")
+				return nil
+			}
+			sorted := make([]string, len(models))
+			copy(sorted, models)
+			sort.Strings(sorted)
+			fmt.Printf("上游可用模型 (%d)：\n", len(models))
+			fmt.Println(strings.Repeat("-", 60))
+			for idx, m := range sorted {
+				if idx%4 == 0 {
+					fmt.Printf("  ")
+				}
+				display := m
+				if len(display) > 28 {
+					display = display[:27] + "."
+				}
+				fmt.Printf("%-30s", display)
+				if idx%4 == 3 {
+					fmt.Println()
+				}
+			}
+			fmt.Println()
 			return nil
-		}
-		sorted := make([]string, len(models))
-		copy(sorted, models)
-		sort.Strings(sorted)
-		fmt.Printf("上游可用模型 (%d)：\n", len(models))
-		fmt.Println(strings.Repeat("-", 60))
-		for idx, m := range sorted {
-			if idx%4 == 0 {
-				fmt.Printf("  ")
-			}
-			display := m
-			if len(display) > 28 {
-				display = display[:27] + "."
-			}
-			fmt.Printf("%-30s", display)
-			if idx%4 == 3 {
-				fmt.Println()
-			}
-		}
-		fmt.Println()
-		return nil
-	},
-}
+		},
+	}
 
 	confCmd.AddCommand(confUpstreamModelsCmd)
 }
@@ -1942,4 +1814,3 @@ func Execute() {
 		os.Exit(1)
 	}
 }
-
