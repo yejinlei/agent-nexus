@@ -780,8 +780,10 @@ func initProxyCmd() {
 	proxyCmd.AddCommand(proxySniffCmd)
 
 	proxyCmd.AddCommand(&cobra.Command{
-		Use:   "db",
-		Hidden: true,
+		Use:           "db",
+		Hidden:        true,
+		SilenceUsage:  true,
+		SilenceErrors: false,
 		RunE: func(*cobra.Command, []string) error {
 			return fmt.Errorf("命令已移除。请使用 'agent-nexus db'（顶层命令）：\n\n  agent-nexus db list\n  agent-nexus db add -u <url> -k <key>\n  agent-nexus db show <id>\n  agent-nexus db rm <id>\n  agent-nexus db query [filter]\n  agent-nexus db check <id>")
 		},
