@@ -68,7 +68,6 @@ func TestFromFlags_HappyPath(t *testing.T) {
 }
 
 func TestFromFlags_Errors(t *testing.T) {
-    // Both empty: returns (nil, nil) per documented contract
     p, err := FromFlags("", "")
     if err != nil {
         t.Fatalf("both empty should return nil, nil, got err=%v", err)
@@ -77,7 +76,6 @@ func TestFromFlags_Errors(t *testing.T) {
         t.Fatalf("both empty should return nil proxy, got %v", p)
     }
 
-    // URL without key: should error
     _, err = FromFlags("http://localhost:8080/v1", "")
     if err == nil {
         t.Fatalf("expected error when --url is set but --key is empty")
@@ -118,26 +116,35 @@ func TestFromFlags_DefaultPort(t *testing.T) {
     }
 }
 
-func TestParsePort(t *testing.T) {
+func TestParsePort_Strict(t *testing.T) {
     tests := []struct {
-        input string
-        want  int
+        input    string
+        wantPort int
+        wantErr  bool
     }{
-        {"3688", 3688},
-        {"11434", 11434},
-        {"0", 0},
-        {"99999", 99999},
-        {"abc", 0},
-        {"8080alpha", 8080},
-        {"", 0},
-        {"  123  ", 123},
-        {"-1", 1}, // existing behavior: skips non-digit chars
+        {"3688", 3688, false},
+        {"11434", 11434, false},
+        {"0", 0, false},
+        {"99999", 99999, false},
+        {"  123  ", 123, false},
+        {"", 0, false},
+        {"3688x", 0, true},
+        {"8080alpha", 0, true},
+        {"abc", 0, true},
+        {"-1", 0, true},
+        {":179", 0, true},
     }
 
     for _, tt := range tests {
-        if got := parsePort(tt.input); got != tt.want {
-            t.Errorf("parsePort(%q) = %d, want %d", tt.input, got, tt.want)
-        }
+        t.Run(tt.input, func(t *testing.T) {
+            got, err := parsePort(tt.input)
+            if (err != nil) != tt.wantErr {
+                t.Fatalf("parsePort(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+            }
+            if got != tt.wantPort {
+                t.Errorf("parsePort(%q) = %d, want %d", tt.input, got, tt.wantPort)
+            }
+        })
     }
 }
 
@@ -158,14 +165,11 @@ func TestDetect_HappyPath(t *testing.T) {
         t.Fatalf("failed to write env: %v", err)
     }
 
-	p, err := Detect()
-	// Expect nil because no proxy config is present in the test env
+    p, err := Detect()
     if err != nil {
-		// Not fatal: in CI/test env no proxy is expected
     }
-	if p == nil {
-		// Expected in test environment without a real proxy
-		t.Skip("no proxy configured in test environment")
+    if p == nil {
+        t.Skip("no proxy configured in test environment")
     }
     if p.Source != ProxyTypeCCX {
         t.Errorf("Source = %q, want %q", p.Source, ProxyTypeCCX)
@@ -179,8 +183,7 @@ func TestDetect_HappyPath(t *testing.T) {
 }
 
 func TestDetect_FailsOnBadHomeDir(t *testing.T) {
-	p, err := Detect()
-	// Expect nil because no proxy config is present in the test env
+    p, err := Detect()
     if p != nil {
         if p.BaseURL == "" && p.APIKey == "" {
             t.Error("proxy returned with empty fields")
@@ -193,8 +196,7 @@ func TestDetect_EnvVarOverride(t *testing.T) {
     os.Setenv("LOCALAI_URL", "http://localhost:8080")
     defer os.Unsetenv("LOCALAI_URL")
 
-	p, err := Detect()
-	// Expect nil because no proxy config is present in the test env
+    p, err := Detect()
     if err == nil && p != nil {
         _ = p.BaseURL
     }

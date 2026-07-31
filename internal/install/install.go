@@ -108,11 +108,12 @@ var registry = []Agent{
 		NpmPackage:     "",
 		UninstallPaths: []string{},
 		Download: map[string]string{
-			PlatformWindows: "https://www.cursor.com/download",
-			PlatformDarwin: "https://www.cursor.com/download",
-			PlatformLinux: "https://www.cursor.com/download",
+			PlatformWindows: "https://cursor.com/install?win32=true",
+			PlatformDarwin: "https://cursor.com/install?osx=true",
+			PlatformLinux: "https://cursor.com/install?linux=true",
 		},
 		Protocol:       "openai",
+		InstallScript:  true,
 		Notes:          "Cursor IDE - openai-compatible provider in settings.json",
 	},
 	{
