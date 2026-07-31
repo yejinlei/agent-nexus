@@ -57,8 +57,6 @@ var rootCmd = &cobra.Command{
   agent-nexus proxy detect          检测 AI 代理配置
   agent-nexus proxy route           显示模型路由表
   agent-nexus proxy sniff           嗅探 LLM 提供商消息格式与模型
-  agent-nexus proxy db add          [已弃用] 嗅探并保存代理配置到数据库
-  agent-nexus proxy db query        [已弃用] 查询代理配置（可选按 ID 或 URL 过滤）
   agent-nexus db add                嗅探代理并保存到数据库
   agent-nexus db list               列出已保存的代理配置
   agent-nexus db show <id>          显示指定代理配置详情
@@ -653,7 +651,6 @@ var proxyCmd = &cobra.Command{
   detect    检测 AI 代理配置
   route     显示模型路由表
   sniff     嗅探 LLM 提供商消息格式与模型
-  db        管理已嗅探的代理配置数据库
 `,
 }
 
@@ -770,14 +767,6 @@ var proxySniffCmd = &cobra.Command{
 	},
 }
 
-// proxyDbCmd is the deprecated wrapper for the db command under proxy.
-// It shares the same subcommands as dbCmd and prints a deprecation warning.
-var proxyDbCmd = &cobra.Command{
-	Use:        "db",
-	Short:      "管理已嗅探的代理配置数据库（已弃用）",
-	Deprecated: "请使用 'agent-nexus db ...'；'agent-nexus proxy db ...' 将在未来版本移除",
-}
-
 func initProxyCmd() {
 
 	proxySniffCmd.Flags().StringVar(&sniffURL, "url", "", "LLM provider endpoint URL（必选）")
@@ -789,15 +778,14 @@ func initProxyCmd() {
 	proxyCmd.AddCommand(proxyDetectCmd)
 	proxyCmd.AddCommand(proxyRouteCmd)
 	proxyCmd.AddCommand(proxySniffCmd)
-	proxyCmd.AddCommand(proxyDbCmd)
 
-	// proxyDbCmd shares the same subcommands as dbCmd (defined in db.go)
-	proxyDbCmd.AddCommand(dbAddCmd)
-	proxyDbCmd.AddCommand(dbListCmd)
-	proxyDbCmd.AddCommand(dbShowCmd)
-	proxyDbCmd.AddCommand(dbRmCmd)
-	proxyDbCmd.AddCommand(dbQueryCmd)
-	proxyDbCmd.AddCommand(dbCheckCmd)
+	proxyCmd.AddCommand(&cobra.Command{
+		Use:   "db",
+		Hidden: true,
+		RunE: func(*cobra.Command, []string) error {
+			return fmt.Errorf("命令已移除。请使用 'agent-nexus db'（顶层命令）：\n\n  agent-nexus db list\n  agent-nexus db add -u <url> -k <key>\n  agent-nexus db show <id>\n  agent-nexus db rm <id>\n  agent-nexus db query [filter]\n  agent-nexus db check <id>")
+		},
+	})
 }
 
 // ========== CONF GROUP ==========
