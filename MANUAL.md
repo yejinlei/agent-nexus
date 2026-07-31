@@ -15,43 +15,33 @@
 
 ---
 
-## 支持的 Agent（11 个）
+## 支持的 Agent
 
-### 可配置（通过代理转发）— 16 个
+agent-nexus 围绕 11 个可安装的 agent 运行时构建（`agent list` 返回的权威列表，也是 `agent discover` 和 `agent models` 的扫描范围）。
+
+### 可配置（通过代理转发）— 9 个
 
 | Agent | 类型 | 协议 | 说明 |
 |-------|------|------|------|
 | codex | CLI | OpenAI Compatible | 任意上游模型 |
 | claude | CLI | OpenAI Compatible | 任意上游模型 |
 | kimi | CLI | ACP | 需代理路由映射 |
-| deepseek | CLI | OpenAI Compatible | 任意上游模型 |
 | opencode | CLI | OpenAI Compatible | 任意上游模型 |
 | openclaw | CLI | OpenAI Compatible | 任意上游模型 |
 | openclaude | CLI | OpenAI Compatible | .env 格式配置 |
 | cursor | IDE | OpenAI Compatible | VS Code 派生 |
-| codebuddy | CLI | OpenAI Compatible | Claude Code 兼容 |
 | hermes | CLI | ACP | 需代理路由映射 |
 | kiro | CLI | ACP | 需代理路由映射 |
-| grok | CLI | ACP | 需代理路由映射 |
-| qoder | CLI | ACP | 需代理路由映射 |
-| trae | CLI | ACP | 需代理路由映射 |
-| lmstudio | CLI | OpenAI Compatible | 本地 LLM（localhost） |
-| clawx | IDE | OpenAI Compatible | 任意上游模型 |
 
-### 不可配置（无外部模型配置字段）— 10 个
+### 不可配置（无外部模型配置字段）— 2 个
 
 | Agent | 类型 | 说明 |
 |-------|------|------|
-| antigravity | CLI | Google Gemini，OAuth/API key 认证 |
-| copilot | CLI | 模型由 GitHub 账号权益决定 |
-| deveco | CLI | 华为 OpenCode 引擎，自有模型目录 |
-| gemini | CLI | Google Gemini CLI，Google auth |
-| pi | CLI | Inflection Pi，npm 包 |
-| qoder-ide | IDE | 自有 AI 后端 |
-| trae-ide | IDE | 自有 AI 后端 |
-| codebuddy-ide | IDE | 自有 AI 后端 |
-| windsurf | IDE | 自有 AI 后端 |
-| zed | IDE | 无内置 AI Agent |
+| grok | CLI | 通过代理路由映射，但无独立模型配置入口 |
+| gemini | CLI | Google Gemini CLI，Google auth（OAuth/API key） |
+
+> 以下 agent 可在本机被发现（`agent discover` 仍会识别），但不在可安装运行时列表中，因此不参与 `agent models` 等命令：
+> antigravity（Google Gemini, OAuth/API key）、copilot（GitHub 账号权益）、deveco（华为 OpenCode 引擎）、pi（Inflection Pi）、deepseek（OpenAI Compatible, 无内置安装器）、codebuddy（Claude Code 兼容, 无内置安装器）、qoder（ACP）、trae（ACP）、lmstudio（OpenAI Compatible）、clawx（IDE）、qoder-ide / trae-ide / codebuddy-ide / windsurf（IDE 自有 AI 后端）、zed（无内置 AI Agent）。
 
 ---
 
@@ -436,7 +426,7 @@ agent-nexus conf branch create production    # 创建生产分支
 agent-nexus conf branch switch production    # 切换到生产分支
 agent-nexus conf branch list                 # 列出所有分支
 agent-nexus conf branch show                 # 显示当前分支信息
-agent-nexus conf bak --branch production     # 在指定分支上创建快照
+agent-nexus conf backup --branch production     # 在指定分支上创建快照
 ```
 
 ### conf upstream-models
