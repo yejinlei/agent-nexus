@@ -72,91 +72,83 @@ os.WriteFile(cfgPath, []byte("base_url = \"http://127.0.0.1:3688/v1\"\n"), 0644)
 
 func TestDiscover_NonConfigurableAgent(t *testing.T) {
 	tmpDir := t.TempDir()
-	roamingDir := filepath.Join(tmpDir, "AppData", "Roaming")
-	copilotDir := filepath.Join(roamingDir, ".config", "github-copilot")
-	os.MkdirAll(copilotDir, 0755)
-	os.WriteFile(filepath.Join(copilotDir, "config.yaml"), []byte("github_token: abc"), 0644)
+	// gemini is non-configurable and is in the 11-runtime scope.
+	geminiDir := filepath.Join(tmpDir, ".gemini")
+	os.MkdirAll(geminiDir, 0755)
+	os.WriteFile(filepath.Join(geminiDir, "config.json"), []byte("{}"), 0644)
 
 	origHome := os.Getenv("USERPROFILE")
 	defer func() { os.Setenv("USERPROFILE", origHome) }()
 	os.Setenv("USERPROFILE", tmpDir)
 
 	agents := Discover()
-	foundCopilot := false
+	foundGemini := false
 	for _, a := range agents {
-		if a.Name == "copilot" {
-			foundCopilot = true
+		if a.Name == "gemini" {
+			foundGemini = true
 			if a.IsConfigurable {
-				t.Error("copilot should NOT be configurable")
-			}
-			if a.Notes == "" {
-				t.Error("copilot should have notes explaining why not configurable")
+				t.Error("gemini should NOT be configurable")
 			}
 			break
 		}
 	}
-	if !foundCopilot {
-		t.Error("copilot agent not found in discover results")
+	if !foundGemini {
+		t.Error("gemini agent not found in discover results")
 	}
 }
 
 func TestDiscover_HomeDirAgent(t *testing.T) {
 	tmpDir := t.TempDir()
-	// deepseek uses HomeDirFiles: ".deepseek/config.toml"
-	deepseekDir := filepath.Join(tmpDir, ".deepseek")
-	os.MkdirAll(deepseekDir, 0755)
-	os.WriteFile(filepath.Join(deepseekDir, "config.toml"), []byte("api_key = sk-xxx"), 0644)
+	// kimi uses HomeDirFiles: ".kimi-code/config.toml" and is in the 11-runtime scope.
+	kimiDir := filepath.Join(tmpDir, ".kimi-code")
+	os.MkdirAll(kimiDir, 0755)
+	os.WriteFile(filepath.Join(kimiDir, "config.toml"), []byte("api_key = sk-xxx"), 0644)
 
 	origHome := os.Getenv("USERPROFILE")
 	defer func() { os.Setenv("USERPROFILE", origHome) }()
 	os.Setenv("USERPROFILE", tmpDir)
 
 	agents := Discover()
-	foundDeepseek := false
+	foundKimi := false
 	for _, a := range agents {
-		if a.Name == "deepseek" {
-			foundDeepseek = true
+		if a.Name == "kimi" {
+			foundKimi = true
 			if !a.HasConfig {
-				t.Error("deepseek should have config")
+				t.Error("kimi should have config")
 			}
 			break
 		}
 	}
-	if !foundDeepseek {
-		t.Error("deepseek agent not found in discover results")
+	if !foundKimi {
+		t.Error("kimi agent not found in discover results")
 	}
 }
 
-func TestDiscover_IdeVariantSkippedWhenCliExists(t *testing.T) {
+func TestDiscover_ScopedToInstallableRuntimes(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Create both a CLI version and an IDE version
-	cliDir := filepath.Join(tmpDir, "AppData", "Roaming", "Qoder", "User")
-		os.MkdirAll(cliDir, 0755)
-	os.WriteFile(filepath.Join(cliDir, "settings.json"), []byte("{}"), 0644)
-
 	origHome := os.Getenv("USERPROFILE")
 	defer func() { os.Setenv("USERPROFILE", origHome) }()
 	os.Setenv("USERPROFILE", tmpDir)
 
 	agents := Discover()
-	// Both qoder and qoder-ide should appear in registry
-	foundQoder := false
-	foundQoderIde := false
+	names := make(map[string]bool)
 	for _, a := range agents {
-		if a.Name == "qoder" {
-			foundQoder = true
-		}
-		if a.Name == "qoder-ide" {
-			foundQoderIde = true
-			// The IDE variant may or may not find config depending on how discover
-			// handles the "-ide" suffix skip logic
+		names[a.Name] = true
+	}
+
+	want := []string{"codex", "claude", "kimi", "opencode", "openclaw", "openclaude", "cursor", "hermes", "kiro", "grok", "gemini"}
+	for _, n := range want {
+		if !names[n] {
+			t.Errorf("discover missing agent %s", n)
 		}
 	}
-	if !foundQoder {
-		t.Error("qoder (CLI) not found")
+	for _, n := range []string{"deepseek", "codebuddy", "qoder", "trae", "antigravity", "copilot", "pi", "deveco", "windsurf", "zed", "lmstudio", "clawx"} {
+		if names[n] {
+			t.Errorf("discover must not contain %s (outside agent list scope)", n)
+		}
 	}
-	_ = foundQoderIde // IDE variant detection depends on specific file layout; non-fatal
 }
+
 
 func TestGetRegistry(t *testing.T) {
 	registry := GetRegistry()

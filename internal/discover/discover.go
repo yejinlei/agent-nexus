@@ -1,6 +1,7 @@
 package discover
 
 import (
+	"agent-nexus/internal/install"
 	"agent-nexus/internal/shared"
 	"fmt"
 	"os"
@@ -298,7 +299,22 @@ func Discover() []AgentInfo {
 	roaming := filepath.Join(home, "AppData", "Roaming")
 	results := []AgentInfo{}
 
+	// Lookup keyed on agent name so we can still read config paths from the
+	// discover registry for each discovered agent.
+	byName := make(map[string]AgentPath, len(registry.agents))
 	for _, ap := range registry.agents {
+		byName[ap.Name] = ap
+	}
+
+	// Iterate over the authoritative 11 installable runtimes from "agent list".
+	// Only those agents are scanned; everything else is excluded from discover
+	// output (consistent with the --agents scope on the models commands).
+	for _, r := range install.AllRuntimes() {
+		ap, ok := byName[r.Name]
+		if !ok {
+			continue
+		}
+
 		var configPath string
 		var found bool
 
@@ -322,16 +338,13 @@ func Discover() []AgentInfo {
 			}
 		}
 
-		if strings.HasSuffix(ap.Name, "-ide") {
-			continue
-		}
 		info := AgentInfo{
-			Name:           ap.Name,
-			Category:       ap.Category,
+			Name:           r.Name,
+			Category:       r.Category,
 			HasConfig:      found,
 			ConfigPath:     configPath,
 			IsConfigurable: ap.IsConfigurable,
-			Protocol:       protocolMap[ap.Name],
+			Protocol:       protocolMap[r.Name],
 			Notes:          ap.Notes,
 		}
 
