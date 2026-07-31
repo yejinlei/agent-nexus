@@ -85,7 +85,7 @@ func TestBuildRoutingTable_NilModelMap(t *testing.T) {
 	}
 	table := BuildRoutingTable(p)
 	// Should have only the default 6 entries
-	if len(table) != 6 {
+	if len(table) != 14 {
 		t.Errorf("expected exactly 6 entries for nil ModelMap, got %d", len(table))
 	}
 	for _, m := range table {

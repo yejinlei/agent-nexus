@@ -15,15 +15,13 @@ func (w *deepSeekWriter) Category() string { return "cli" }
 func (w *deepSeekWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *deepSeekWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "sensenova-6.7-flash-lite"
-	}
-	content := "# DeepSeek TUI Configuration - AI Proxy\n" +
-		"# Or set DEEPSEEK_API_KEY environment variable\n\n" +
-		"api_key = \"" + p.APIKey + "\"\n" +
-		"base_url = \"" + p.BaseURL + "\"\n" +
-		"default_text_model = \"" + model + "\"\n" +
-		"reasoning_effort = \"high\"\n"
+	if model == "" { model = modelDefault(w.Name()) }
+	content := "# DeepSeek TUI Configuration - AI Proxy`n" +
+		"# Or set DEEPSEEK_API_KEY environment variable`n`n" +
+		"api_key = \"" + p.APIKey + "\"`n" +
+		"base_url = \"" + p.BaseURL + "\"`n" +
+		"default_text_model = \"" + model + "\"`n" +
+		"reasoning_effort = \"high\"`n"
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
@@ -46,7 +44,6 @@ func (w *deepSeekWriter) StatusModel(path string) (model, source, notes string) 
 		return "", "error", "配置文件未找到"
 	}
 	s := string(data)
-	// Look for default_text_model = "xxx"
 	if idx := strings.Index(s, "default_text_model = \""); idx >= 0 {
 		end := strings.Index(s[idx+len("default_text_model = \""):], "\"")
 		if end >= 0 {
@@ -55,3 +52,6 @@ func (w *deepSeekWriter) StatusModel(path string) (model, source, notes string) 
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

@@ -15,24 +15,22 @@ func (w *hermesWriter) Category() string { return "cli" }
 func (w *hermesWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *hermesWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "sensenova-6.7-flash-lite"
-	}
-	content := "# Hermes Configuration - CCX Proxy\n" +
-		"# Hermes Configuration - CCX Proxy uses ACP protocol with mcpServers for provider configuration\n\n" +
-		"providers:\n" +
-		"  ccx:\n" +
-		"    type: openai_legacy\n" +
-		"    base_url: \"" + p.BaseURL + "\"\n" +
-		"    api_key: \"" + p.APIKey + "\"\n" +
-		"    models:\n" +
-		"      default: " + model + "\n\n" +
-		"mcpServers:\n" +
-		"  ccx:\n" +
-		"    type: http\n" +
-		"    url: \"" + p.BaseURL + "\"\n" +
-		"    apiKey: \"" + p.APIKey + "\"\n\n" +
-		"default_model: " + model + "\n"
+	if model == "" { model = modelDefault(w.Name()) }
+	content := "# Hermes Configuration - CCX Proxy`n" +
+		"# Hermes Configuration - CCX Proxy uses ACP protocol with mcpServers for provider configuration`n`n" +
+		"providers:`n" +
+		"  ccx:`n" +
+		"    type: openai_legacy`n" +
+		"    base_url: \"" + p.BaseURL + "\"`n" +
+		"    api_key: \"" + p.APIKey + "\"`n" +
+		"    models:`n" +
+		"      default: " + model + "`n`n" +
+		"mcpServers:`n" +
+		"  ccx:`n" +
+		"    type: http`n" +
+		"    url: \"" + p.BaseURL + "\"`n" +
+		"    apiKey: \"" + p.APIKey + "\"`n`n" +
+		"default_model: " + model + "`n"
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
@@ -56,10 +54,13 @@ func (w *hermesWriter) StatusModel(path string) (model, source, notes string) {
 	s := string(data)
 	if idx := strings.Index(s, "default_model: "); idx >= 0 {
 		line := s[idx+len("default_model: "):]
-		if i := strings.Index(line, "\n"); i >= 0 {
+		if i := strings.Index(line, "`n"); i >= 0 {
 			return strings.TrimSpace(line[:i]), source, notes
 		}
 		return strings.TrimSpace(line), source, notes
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

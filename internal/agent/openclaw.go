@@ -16,9 +16,7 @@ func (w *openClawWriter) Category() string { return "cli" }
 func (w *openClawWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *openClawWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "sensenova-6.7-flash-lite"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -70,7 +68,6 @@ func (w *openClawWriter) StatusModel(path string) (model, source, notes string) 
 		return "", "error", "配置文件未找到"
 	}
 	s := string(data)
-	// Look for the first model id in the providers block
 	if idx := strings.Index(s, "\"id\": \""); idx >= 0 {
 		end := strings.Index(s[idx+len("\"id\": \""):], "\"")
 		if end >= 0 {
@@ -79,3 +76,6 @@ func (w *openClawWriter) StatusModel(path string) (model, source, notes string) 
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

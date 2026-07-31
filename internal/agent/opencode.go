@@ -16,9 +16,7 @@ func (w *openCodeWriter) Category() string { return "cli" }
 func (w *openCodeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "myccx/glm-5.2"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	smallModel := "myccx/deepseek-v4-flash"
 
 	var cfg map[string]interface{}
@@ -66,9 +64,12 @@ func (w *openCodeWriter) Status(path string) (bool, string) {
 
 func (w *openCodeWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
-	model, found := extractModelFromConfig(path)
+	modelName, found := extractModelFromConfig(path)
 	if found {
-		return model, source, notes
+		return modelName, source, notes
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

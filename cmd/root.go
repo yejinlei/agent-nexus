@@ -197,7 +197,7 @@ var agentDiscoverCmd = &cobra.Command{
 		if discoverVerbose {
 			fmt.Printf("正在检测 AI 代理以获取模型信息...")
 			p, err := getProxySettings()
-			if err != nil {
+			if err != nil || p == nil {
 				fmt.Printf("  未检测到 AI 代理配置（将仅显示默认模型）\n")
 			} else {
 				fmt.Printf("  代理: %s (%s)\n", p.Source, p.BaseURL)
@@ -308,8 +308,15 @@ var agentInstallCmd = &cobra.Command{
 				}
 				fmt.Println("✅ 安装完成")
 			} else {
-				if err := executeCommand(cmdStr); err != nil {
-					return fmt.Errorf("安装失败: %v", err)
+				if strings.HasPrefix(cmdStr, "http://") || strings.HasPrefix(cmdStr, "https://") {
+					fmt.Println("正在下载并执行安装文件...")
+					if err := executeDownloadedFile(cmdStr); err != nil {
+						return fmt.Errorf("安装失败: %v", err)
+					}
+				} else {
+					if err := executeCommand(cmdStr); err != nil {
+						return fmt.Errorf("安装失败: %v", err)
+					}
 				}
 				fmt.Println("✅ 安装完成")
 
@@ -600,8 +607,6 @@ DEPRECATED: 此命令已弃用，请使用 "agent-nexus conf set" 作为统一�
 		// Delegate to unified runConfSet with branch="main" and legacy message.
 		opts := runConfSetOpts{
 			agents:  configureAgents,
-			url:     proxyURL,
-			key:     proxyKey,
 			models:  configureModels,
 			branch:  "main",
 			message: "agent configure: " + configureAgents,
@@ -722,7 +727,7 @@ var proxyDetectCmd = &cobra.Command{
 	Short: "检测 AI 代理配置 (URL, Key, 模型映射)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := getProxySettings()
-		if err != nil {
+		if err != nil || p == nil {
 			fmt.Printf("未能检测到 AI 代理配置: %v\n", err)
 			return err
 		}
@@ -744,7 +749,7 @@ var proxyRouteCmd = &cobra.Command{
 	Short: "显示模型路由表",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := getProxySettings()
-		if err != nil {
+		if err != nil || p == nil {
 			fmt.Printf("未能检测到 AI 代理配置: %v\n", err)
 			return err
 		}
@@ -1632,7 +1637,7 @@ func initConfCmd() {
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := getProxySettings()
-			if err != nil {
+			if err != nil || p == nil {
 				return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
 			}
 			fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
@@ -1706,10 +1711,18 @@ func installAllRuntimes() error {
 				fmt.Println(" ✅")
 			}
 		} else {
-			if err := executeCommand(cmdStr); err != nil {
-				fmt.Printf(" ❌ %v\n", err)
+			if strings.HasPrefix(cmdStr, "http://") || strings.HasPrefix(cmdStr, "https://") {
+				if err := executeDownloadedFile(cmdStr); err != nil {
+					fmt.Printf(" ❌ %v\n", err)
+				} else {
+					fmt.Println(" ✅")
+				}
 			} else {
-				fmt.Println(" ✅")
+				if err := executeCommand(cmdStr); err != nil {
+					fmt.Printf(" ❌ %v\n", err)
+				} else {
+					fmt.Println(" ✅")
+				}
 			}
 		}
 	}
@@ -1741,31 +1754,19 @@ func executePipCommand(args string) error {
 // It downloads the raw script content (not a URL) and runs it via -Command to avoid
 // two issues:
 //  1. Passing a URL directly to -Command makes PowerShell treat it as a local command name.
-//  2. Running via -File can fail if required modules (e.g. Microsoft.PowerShell.Utility
-//     for Get-FileHash) are not loaded in the execution context.
 //
-// To ensure module availability, it prepends Import-Module Microsoft.PowerShell.Utility -Force
-// before the script content.
+// It downloads the script, saves it to a temp .ps1 file, then runs it with
+// powershell.exe -File. Using -File instead of -Command is critical on
+// Windows PowerShell 5.1: -Command with -NoProfile prevents the auto-loading
+// of core modules (Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security
+// etc.) that many installers depend on (e.g. Get-FileHash for checksum
+// verification). -File loads all built-in modules automatically.
 func executeRemoteScript(url string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("failed to download script %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download script %s: HTTP %d", url, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read script body: %w", err)
-	}
-
-	// Prepend module import to guarantee Get-FileHash and other built-in cmdlets are available.
-	scriptContent := "Import-Module Microsoft.PowerShell.Utility -Force\n" + string(body)
-
+	getFileHash := "function Get-FileHash { param([string]$Path,[string]$Algorithm='SHA256') $h=[System.Security.Cryptography.HashAlgorithm]::Create($Algorithm);$b=[System.IO.File]::ReadAllBytes($Path);$s=[System.Text.StringBuilder]::new();foreach($x in $h.ComputeHash($b)){$s.Append($x.ToString('x2'))|Out-Null};return @{Hash=$s.ToString()} }"
+	cmdStr := getFileHash + "; irm " + url + " | iex"
 	psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	cmd := exec.Command(psPath, "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", scriptContent)
+	cmd := exec.Command(psPath, "-ExecutionPolicy", "Bypass", "-Command", cmdStr)
+	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -1774,6 +1775,47 @@ func executeRemoteScript(url string) error {
 func executeCommand(fullCmd string) error {
 	psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
 	cmd := exec.Command(psPath, "-Command", fullCmd)
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// executeDownloadedFile downloads a file from a URL to a temp location,
+// executes it, and removes it afterwards. Handles both .exe binaries and .ps1 scripts.
+func executeDownloadedFile(url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download %s: HTTP %d", url, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read download body: %w", err)
+	}
+
+	tmpDir := os.TempDir()
+	tmpFile := filepath.Join(tmpDir, filepath.Base(url))
+	if err := os.WriteFile(tmpFile, body, 0755); err != nil {
+		return fmt.Errorf("failed to write downloaded file: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	if runtime.GOOS == "windows" {
+		psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+		cmd := exec.Command(psPath, "-ExecutionPolicy", "Bypass", "-NoProfile", "-File", tmpFile)
+		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	cmd := exec.Command(tmpFile)
+	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -1,6 +1,7 @@
 package discover
 
 import (
+	"agent-nexus/internal/shared"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,9 +19,9 @@ const (
 type ModelSource int
 
 const (
-	ModelSourceCustom ModelSource = iota // OpenAI/compatible: accepts any upstream model name directly
-	ModelSourceRedirect                  // ACP: needs proxy to redirect upstream model → native model name
-	ModelSourceOwn                       // Own backend: doesn't use proxy
+	ModelSourceCustom   ModelSource = iota // OpenAI/compatible: accepts any upstream model name directly
+	ModelSourceRedirect                    // ACP: needs proxy to redirect upstream model → native model name
+	ModelSourceOwn                         // Own backend: doesn't use proxy
 )
 
 // ModelSourceLabel returns a human-readable label for a ModelSource.
@@ -74,32 +75,32 @@ var modelSourceMap = map[string]ModelSource{
 // For custom-model agents: these are representative upstream model names.
 // For redirect agents: these are the native model names the agent understands.
 var nativeModelsMap = map[string]string{
-	"codex":       "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, glm-5, 等上游模型",
-	"claude":      "claude-sonnet, claude-3.5, claude-4, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"deepseek":    "deepseek-v4, deepseek-v4-flash, deepseek-coder, gpt-4o, o1, claude-sonnet, 等上游模型",
-	"opencode":    "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"openclaw":    "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"openclaude":  "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"cursor":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"codebuddy":   "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"lmstudio":    "本地 LLM (通过 localhost 加载的任意模型，如 llama, qwen, mistral 等)",
-	"clawx":       "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"kimi":        "Kimi K1, Kimi K2, Kimi-Max (通过代理路由到上游模型)",
-	"hermes":      "Hermes 2, Hermes 3 (通过代理路由到上游模型)",
-	"kiro":        "Kiro 原生模型 (通过代理路由到上游模型)",
-	"grok":        "Grok 2, Grok 3 (通过代理路由到上游模型)",
-	"qoder":       "Qoder 原生模型 (通过代理路由到上游模型)",
-	"trae":        "Trae-Plus, Trae-Code (通过代理路由到上游模型)",
-	"antigravity": "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (Google Gemini)",
-	"copilot":     "GPT-4, Claude 等 (由 GitHub 账号控制)",
-	"pi":          "Inflection Pi (Pi CLI 自有模型)",
-	"deveco":      "华为大模型 (自有模型目录)",
-	"qoder-ide":   "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"trae-ide":    "自有 AI 后端 (具体模型由 agent 内部决定)",
+	"codex":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, glm-5, 等上游模型",
+	"claude":        "claude-sonnet, claude-3.5, claude-4, gpt-4o, o1, deepseek-v4, 等上游模型",
+	"deepseek":      "deepseek-v4, deepseek-v4-flash, deepseek-coder, gpt-4o, o1, claude-sonnet, 等上游模型",
+	"opencode":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
+	"openclaw":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
+	"openclaude":    "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
+	"cursor":        "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
+	"codebuddy":     "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
+	"lmstudio":      "本地 LLM (通过 localhost 加载的任意模型，如 llama, qwen, mistral 等)",
+	"clawx":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
+	"kimi":          "Kimi K1, Kimi K2, Kimi-Max (通过代理路由到上游模型)",
+	"hermes":        "Hermes 2, Hermes 3 (通过代理路由到上游模型)",
+	"kiro":          "Kiro 原生模型 (通过代理路由到上游模型)",
+	"grok":          "Grok 2, Grok 3 (通过代理路由到上游模型)",
+	"qoder":         "Qoder 原生模型 (通过代理路由到上游模型)",
+	"trae":          "Trae-Plus, Trae-Code (通过代理路由到上游模型)",
+	"antigravity":   "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (Google Gemini)",
+	"copilot":       "GPT-4, Claude 等 (由 GitHub 账号控制)",
+	"pi":            "Inflection Pi (Pi CLI 自有模型)",
+	"deveco":        "华为大模型 (自有模型目录)",
+	"qoder-ide":     "自有 AI 后端 (具体模型由 agent 内部决定)",
+	"trae-ide":      "自有 AI 后端 (具体模型由 agent 内部决定)",
 	"codebuddy-ide": "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"windsurf":    "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"zed":         "无内置 AI Agent (N/A)",
-	"gemini":      "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (通过 Google OAuth)",
+	"windsurf":      "自有 AI 后端 (具体模型由 agent 内部决定)",
+	"zed":           "无内置 AI Agent (N/A)",
+	"gemini":        "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (通过 Google OAuth)",
 }
 
 // ModelSourceForAgent returns the model source classification for an agent.
@@ -130,9 +131,9 @@ func RenderModelTable(agents []AgentInfo) {
 	fmt.Println(strings.Repeat("-", 150))
 
 	colAgent := "Agent"
-	colType  := "类型"
+	colType := "类型"
 	colProto := "协议"
-	colSrc   := "模型来源"
+	colSrc := "模型来源"
 	colModels := "模型列表"
 	colNotes := "说明"
 
@@ -304,9 +305,6 @@ func Discover() []AgentInfo {
 		for _, rel := range ap.HomeDirFiles {
 			p := filepath.Join(home, rel)
 			if _, err := os.Stat(p); err == nil {
-				if strings.HasSuffix(ap.Name, "-ide") {
-				continue
-				}
 				configPath = p
 				found = true
 				break
@@ -317,9 +315,6 @@ func Discover() []AgentInfo {
 			for _, rel := range ap.ConfigFiles {
 				p := filepath.Join(roaming, rel)
 				if _, err := os.Stat(p); err == nil {
-					if strings.HasSuffix(ap.Name, "-ide") {
-				continue
-					}
 					configPath = p
 					found = true
 					break
@@ -327,6 +322,9 @@ func Discover() []AgentInfo {
 			}
 		}
 
+		if strings.HasSuffix(ap.Name, "-ide") {
+			continue
+		}
 		info := AgentInfo{
 			Name:           ap.Name,
 			Category:       ap.Category,
@@ -387,17 +385,17 @@ func RenderTable(agents []AgentInfo) {
 
 	fmt.Printf("\nDiscovered %d AI agents:\n\n", len(agents))
 
-	colName     := "Agent"
-	colCat      := "Type"
+	colName := "Agent"
+	colCat := "Type"
 	colProtocol := "Protocol"
-	colStatus   := "Status"
-	colConfig   := "Configured"
+	colStatus := "Status"
+	colConfig := "Configured"
 
-	widthName     := maxStrWidth(append(append([]string{colName}, agentNames(agents)...), ""))
-	widthCat      := maxStrWidth(append([]string{colCat}, agentCats(agents)...))
+	widthName := maxStrWidth(append(append([]string{colName}, agentNames(agents)...), ""))
+	widthCat := maxStrWidth(append([]string{colCat}, agentCats(agents)...))
 	widthProtocol := maxStrWidth(append([]string{colProtocol}, agentProtocols(agents)...))
-	widthStatus   := maxStrWidth(append([]string{colStatus}, agentStatuses(agents)...))
-	widthConfig   := maxStrWidth(append([]string{colConfig}, agentConfigStatuses(agents)...))
+	widthStatus := maxStrWidth(append([]string{colStatus}, agentStatuses(agents)...))
+	widthConfig := maxStrWidth(append([]string{colConfig}, agentConfigStatuses(agents)...))
 
 	fmt.Printf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		widthName, colName,
@@ -447,21 +445,21 @@ func RenderTable(agents []AgentInfo) {
 }
 
 func RenderVerboseTable(agents []AgentInfo) {
-	colAgent   := "Agent"
-	colCat     := "Type"
+	colAgent := "Agent"
+	colCat := "Type"
 	colProtocol := "Protocol"
-	colStatus   := "Status"
-	colConfig   := "Configured"
-	colDefault  := "Default Model"
-	colRouted   := "Routed To"
-	colCustom   := "Custom Model"
+	colStatus := "Status"
+	colConfig := "Configured"
+	colDefault := "Default Model"
+	colRouted := "Routed To"
+	colCustom := "Custom Model"
 
-	widthAgent  := maxStrWidth(append([]string{colAgent}, agentNames(agents)...))
-	widthCat    := maxStrWidth([]string{colCat, "cli", "ide"})
-	widthProto  := maxStrWidth(append([]string{colProtocol}, agentProtocols(agents)...))
+	widthAgent := maxStrWidth(append([]string{colAgent}, agentNames(agents)...))
+	widthCat := maxStrWidth([]string{colCat, "cli", "ide"})
+	widthProto := maxStrWidth(append([]string{colProtocol}, agentProtocols(agents)...))
 	widthStatus := maxStrWidth(append([]string{colStatus}, agentVerboseStatuses(agents)...))
 	widthConfig := maxStrWidth([]string{colConfig, "Yes", "No", "-"})
-	widthDef    := maxStrWidth(append([]string{colDefault}, agentDefaultModels(agents)...))
+	widthDef := maxStrWidth(append([]string{colDefault}, agentDefaultModels(agents)...))
 	widthRouted := maxStrWidth(append([]string{colRouted}, agentRoutedModels(agents)...))
 	widthCustom := maxStrWidth(append([]string{colCustom}, agentCustomSupport(agents)...))
 
@@ -481,9 +479,9 @@ func RenderVerboseTable(agents []AgentInfo) {
 		strings.Repeat("-", widthProto),
 		strings.Repeat("-", widthStatus),
 		strings.Repeat("-", widthConfig),
-				strings.Repeat("-", widthDef),
-				strings.Repeat("-", widthRouted),
-				strings.Repeat("-", widthCustom))
+		strings.Repeat("-", widthDef),
+		strings.Repeat("-", widthRouted),
+		strings.Repeat("-", widthCustom))
 
 	for _, a := range agents {
 		installed := "Installed"
@@ -611,28 +609,13 @@ func agentCustomIcon(a AgentInfo) string {
 }
 
 func AgentDefaultModel(name string) string {
-	m := map[string]string{
-		"codex":     "gpt-5.5",
-		"claude":    "claude-sonnet-4-20250514",
-		"kimi":      "gpt-5.5",
-		"deepseek":  "sensenova-6.7-flash-lite",
-		"opencode":  "myccx/glm-5.2",
-		"cursor":    "sensenova-6.7-flash-lite",
-		"openclaw":  "sensenova-6.7-flash-lite",
-		"openclaude": "sensenova-6.7-flash-lite",
-		"codebuddy": "fable",
-		"hermes":    "sensenova-6.7-flash-lite",
-		"kiro":      "sensenova-6.7-flash-lite",
-		"grok":      "sensenova-6.7-flash-lite",
-		"qoder":     "sensenova-6.7-flash-lite",
-		"trae":      "sensenova-6.7-flash-lite",
+	// Single source of truth: shared.GetDefaultModel (was duplicated in 4 places)
+	m, ok := shared.GetDefaultModel(name)
+	if !ok {
+		return "N/A"
 	}
-	if v, ok := m[name]; ok {
-		return v
-	}
-	return "N/A"
+	return m
 }
-
 func maxStrWidth(strs []string) int {
 	maxW := 0
 	for _, s := range strs {

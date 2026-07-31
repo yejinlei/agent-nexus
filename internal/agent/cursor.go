@@ -16,9 +16,7 @@ func (w *cursorWriter) Category() string { return "ide" }
 func (w *cursorWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *cursorWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "sensenova-6.7-flash-lite"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	var cfg map[string]interface{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -50,9 +48,12 @@ func (w *cursorWriter) Status(path string) (bool, string) {
 
 func (w *cursorWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
-	model, found := extractModelFromConfig(path)
+	modelName, found := extractModelFromConfig(path)
 	if found {
-		return model, source, notes
+		return modelName, source, notes
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

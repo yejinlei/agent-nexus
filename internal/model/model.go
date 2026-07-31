@@ -3,6 +3,7 @@ package model
 import (
 	"agent-nexus/internal/discover"
 	"agent-nexus/internal/proxy"
+	"agent-nexus/internal/shared"
 )
 
 // ModelMapping represents a model routing entry
@@ -26,23 +27,12 @@ type ModelDetail struct {
 	Notes          string // explanation about custom models vs. redefinition
 }
 
-// BuildRoutingTable returns model routing info based on detected proxy settings
-// Supports both CCX Desktop (ccx/Desktop) and CC-Switch (ccx/Switch) proxies
+// BuildRoutingTable returns model routing info based on detected proxy settings.
+// Supports both CCX Desktop (ccx/Desktop) and CC-Switch (ccx/Switch) proxies.
 func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
-	routing := []ModelMapping{
-		{"codex", "gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
-		{"claude", "fable", "glm-5.2", "CCX"},
-		{"kimi", "gpt-5.5", "sensenova-6.7-flash-lite", "CCX"},
-		{"deepseek", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"opencode", "myccx/glm-5.2", "glm-5.2", "CCX"},
-		{"cursor", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"openclaw", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"codebuddy", "fable", "glm-5.2", "CCX"},
-		{"hermes", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"kiro", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"grok", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"qoder", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
-		{"trae", "sensenova-6.7-flash-lite", "sensenova-6.7-flash-lite", "CCX"},
+	routing := make([]ModelMapping, 0, len(shared.DefaultModels))
+	for agent, defModel := range shared.DefaultModels {
+		routing = append(routing, ModelMapping{Agent: agent, Model: defModel, Target: defModel, Source: "CCX"})
 	}
 
 	if p != nil && p.ModelMap != nil {
@@ -57,23 +47,6 @@ func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 // BuildModelDetails enriches each discovered agent with model-info fields.
 // Pass the proxy (may be nil if not detected) and the agent list.
 func BuildModelDetails(p *proxy.Proxy, agents []discover.AgentInfo) map[string]*ModelDetail {
-	// Default model each agent uses when configured by agent-nexus
-	defaultRouting := map[string]string{
-		"codex":     "gpt-5.5",
-		"claude":    "fable",
-		"kimi":      "gpt-5.5",
-		"deepseek":  "sensenova-6.7-flash-lite",
-		"opencode":  "myccx/glm-5.2",
-		"cursor":    "sensenova-6.7-flash-lite",
-		"openclaw":  "sensenova-6.7-flash-lite",
-		"codebuddy": "fable",
-		"hermes":    "sensenova-6.7-flash-lite",
-		"kiro":      "sensenova-6.7-flash-lite",
-		"grok":      "sensenova-6.7-flash-lite",
-		"qoder":     "sensenova-6.7-flash-lite",
-		"trae":      "sensenova-6.7-flash-lite",
-	}
-
 	details := make(map[string]*ModelDetail)
 	for _, a := range agents {
 		md := &ModelDetail{
@@ -88,12 +61,12 @@ func BuildModelDetails(p *proxy.Proxy, agents []discover.AgentInfo) map[string]*
 			md.DefaultModel = "N/A"
 			md.RoutedTo = "N/A"
 			md.SupportsCustom = false
-			md.ModelSource = "N/A"
+		md.ModelSource = "N/A"
 			details[a.Name] = md
 			continue
 		}
 
-		md.DefaultModel = defaultRouting[a.Name]
+		md.DefaultModel, _ = shared.GetDefaultModel(a.Name)
 
 		// Find target from routing table
 		routing := BuildRoutingTable(p)

@@ -16,9 +16,7 @@ func (w *codexWriter) Category() string { return "cli" }
 func (w *codexWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *codexWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "gpt-5.5"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -102,3 +100,6 @@ func applyPattern(content, pattern, replacement string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

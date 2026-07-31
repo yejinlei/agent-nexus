@@ -16,9 +16,7 @@ func (w *codeBuddyWriter) Category() string { return "cli" }
 func (w *codeBuddyWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *codeBuddyWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "fable"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	var cfg map[string]interface{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -44,9 +42,10 @@ func (w *codeBuddyWriter) Configure(path string, p *proxy.Proxy, model string) e
 func (w *codeBuddyWriter) Status(path string) (bool, string) {
 	data, _ := os.ReadFile(path)
 	s := string(data)
-	if strings.Contains(s, "127.0.0.1") ||
+	configured := strings.Contains(s, "127.0.0.1") ||
 		strings.Contains(s, "platform.sensenova") || strings.Contains(s, "api.deepseek") ||
-		strings.Contains(s, "api.siliconflow") || strings.Contains(s, "localhost:11434") {
+		strings.Contains(s, "api.siliconflow") || strings.Contains(s, "localhost:11434")
+	if configured {
 		return true, "via AI proxy"
 	}
 	return false, "未配置代理"
@@ -54,9 +53,12 @@ func (w *codeBuddyWriter) Status(path string) (bool, string) {
 
 func (w *codeBuddyWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
-	model, found := extractModelFromConfig(path)
+	modelName, found := extractModelFromConfig(path)
 	if found {
-		return model, source, notes
+		return modelName, source, notes
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

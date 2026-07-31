@@ -1,9 +1,18 @@
 package model
 
 import (
-    "sort"
-    "agent-nexus/internal/proxy"
+	"sort"
+	"agent-nexus/internal/proxy"
+	"agent-nexus/internal/shared"
 )
+
+// DefaultModels is the single authoritative source of default model names
+// for every configurable agent. All other components (routing table,
+// discover display, agent writer Configure() fallbacks) must use this map
+// instead of defining their own copies.
+//
+// The key is the agent name (e.g. "codex"), the value is the model name
+// that agent-nexus writes into the agent's config file.
 
 // ResolveModelForAgent determines the best model to use for a given agent.
 //
@@ -24,118 +33,105 @@ import (
 // the agent config and where that choice came from: "upstream", "proxy-map", or
 // "default".
 func ResolveModelForAgent(agentName, defaultModel string, upstreamModels []string, proxyModelMap map[string]string) (model string, source string) {
-    upstreamSet := make(map[string]bool)
-    for _, m := range upstreamModels {
-        upstreamSet[m] = true
-    }
+	upstreamSet := make(map[string]bool)
+	for _, m := range upstreamModels {
+		upstreamSet[m] = true
+	}
 
-    // 1. Prefer upstream model if the default model exists upstream
-    if len(upstreamSet) > 0 && upstreamSet[defaultModel] {
-        return defaultModel, "upstream"
-    }
+	// 1. Prefer upstream model if the default model exists upstream
+	if len(upstreamSet) > 0 && upstreamSet[defaultModel] {
+		return defaultModel, "upstream"
+	}
 
-    // 2. Fall back to proxy model map
-    if proxyModelMap != nil {
-        if target, ok := proxyModelMap[defaultModel]; ok {
-            return target, "proxy-map"
-        }
-    }
+	// 2. Fall back to proxy model map
+	if proxyModelMap != nil {
+		if target, ok := proxyModelMap[defaultModel]; ok {
+			return target, "proxy-map"
+		}
+	}
 
-    // 3. Keep default model (proxy forwards as-is)
-    return defaultModel, "default"
+	// 3. Keep default model (proxy forwards as-is)
+	return defaultModel, "default"
 }
 
 // ResolveAllModels computes model resolution for every agent in the routing table.
 // Returns a slice of Resolution entries, sorted by agent name.
 func ResolveAllModels(upstreamModels []string, proxyModelMap map[string]string) []Resolution {
-    upstreamSet := make(map[string]bool)
-    for _, m := range upstreamModels {
-        upstreamSet[m] = true
-    }
+	upstreamSet := make(map[string]bool)
+	for _, m := range upstreamModels {
+		upstreamSet[m] = true
+	}
 
-    // Build a minimal proxy to reuse BuildRoutingTable
-    p := &proxy.Proxy{ModelMap: proxyModelMap}
-    routing := BuildRoutingTable(p)
-    seen := make(map[string]bool)
-    var agents []string
-    for _, r := range routing {
-        if r.Agent == "CCX-proxy" {
-            continue
-        }
-        if !seen[r.Agent] {
-            seen[r.Agent] = true
-            agents = append(agents, r.Agent)
-        }
-    }
-    sort.Strings(agents)
+	// Build a minimal proxy to reuse BuildRoutingTable
+	p := &proxy.Proxy{ModelMap: proxyModelMap}
+	routing := BuildRoutingTable(p)
+	seen := make(map[string]bool)
+	var agents []string
+	for _, r := range routing {
+		if r.Agent == "CCX-proxy" {
+			continue
+		}
+		if !seen[r.Agent] {
+			seen[r.Agent] = true
+			agents = append(agents, r.Agent)
+		}
+	}
+	sort.Strings(agents)
 
-    defaultRouting := map[string]string{
-        "codex":     "gpt-5.5",
-        "claude":    "fable",
-        "kimi":      "gpt-5.5",
-        "deepseek":  "sensenova-6.7-flash-lite",
-        "opencode":  "myccx/glm-5.2",
-        "cursor":    "sensenova-6.7-flash-lite",
-        "openclaw":  "sensenova-6.7-flash-lite",
-        "codebuddy": "fable",
-        "hermes":    "sensenova-6.7-flash-lite",
-        "kiro":      "sensenova-6.7-flash-lite",
-        "grok":      "sensenova-6.7-flash-lite",
-        "qoder":     "sensenova-6.7-flash-lite",
-        "trae":      "sensenova-6.7-flash-lite",
-    }
+	var resolutions []Resolution
+	for _, name := range agents {
+		defaultModel, ok := shared.GetDefaultModel(name)
+		if !ok {
+			continue
+		}
+		target := defaultModel
+		source := "default"
+		notes := ""
 
-    var resolutions []Resolution
-    for _, name := range agents {
-        defaultModel := defaultRouting[name]
-        target := defaultModel
-        source := "default"
-        notes := ""
+		if len(upstreamSet) > 0 && upstreamSet[defaultModel] {
+			target = defaultModel
+			source = "upstream"
+			notes = "upstream 支持，直接使用"
+		} else if proxyModelMap != nil {
+			if mapped, ok := proxyModelMap[defaultModel]; ok {
+				target = mapped
+				source = "proxy-map"
+				notes = "上游不支持，走代理重定向"
+			} else {
+				notes = "上游不支持，使用默认模型（需代理重定向）"
+			}
+		}
 
-        if len(upstreamSet) > 0 && upstreamSet[defaultModel] {
-            target = defaultModel
-            source = "upstream"
-            notes = "upstream 支持，直接使用"
-        } else if proxyModelMap != nil {
-            if mapped, ok := proxyModelMap[defaultModel]; ok {
-                target = mapped
-                source = "proxy-map"
-                notes = "上游不支持，走代理重定向"
-            } else {
-                notes = "上游不支持，使用默认模型（需代理重定向）"
-            }
-        }
+		resolutions = append(resolutions, Resolution{
+			Agent:   name,
+			Model:   target,
+			Default: defaultModel,
+			Source:  source,
+			Notes:   notes,
+		})
+	}
 
-        resolutions = append(resolutions, Resolution{
-            Agent:   name,
-            Model:   target,
-            Default: defaultModel,
-            Source:  source,
-            Notes:   notes,
-        })
-    }
-
-    return resolutions
+	return resolutions
 }
 
 // Resolution is one agent's model resolution result.
 type Resolution struct {
-    Agent   string
-    Model   string
-    Default string
-    Source  string
-    Notes   string
+	Agent   string
+	Model   string
+	Default string
+	Source  string
+	Notes   string
 }
 
 // NeedRedirect returns true if the model will require proxy redirection.
 func (r *Resolution) NeedRedirect() bool {
-    return r.Source != "upstream"
+	return r.Source != "upstream"
 }
 
 // String returns a one-line summary of the resolution.
 func (r *Resolution) String() string {
-    if r.NeedRedirect() {
-        return r.Agent + ": " + r.Default + " -> " + r.Model + " [" + r.Source + "]"
-    }
-    return r.Agent + ": " + r.Model + " [upstream]"
+	if r.NeedRedirect() {
+		return r.Agent + ": " + r.Default + " -> " + r.Model + " [" + r.Source + "]"
+	}
+	return r.Agent + ": " + r.Model + " [upstream]"
 }

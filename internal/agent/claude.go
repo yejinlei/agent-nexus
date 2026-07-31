@@ -16,9 +16,7 @@ func (w *claudeWriter) Category() string { return "cli" }
 func (w *claudeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" {
-		model = "fable"
-	}
+	if model == "" { model = modelDefault(w.Name()) }
 	var cfg map[string]interface{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -55,9 +53,12 @@ func (w *claudeWriter) Status(path string) (bool, string) {
 
 func (w *claudeWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
-	model, found := extractModelFromConfig(path)
+	modelName, found := extractModelFromConfig(path)
 	if found {
-		return model, source, notes
+		return modelName, source, notes
 	}
 	return "", source, notes
 }
+
+// modelDefault returns the canonical default model for this writer's agent
+// from the central shared.DefaultModels map.

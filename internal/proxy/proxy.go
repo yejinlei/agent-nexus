@@ -130,9 +130,17 @@ func detectCCXDesktop() (*Proxy, error) {
 		}
 	}
 
+		apiKey, keyFound := readEnvFile(ccxEnv, "API_KEY")
+	if !keyFound {
+		apiKey, keyFound = readEnvFile(ccxEnv, "OPENAI_API_KEY")
+	}
+	if !keyFound {
+		return nil, fmt.Errorf("CCX Desktop proxy found but no API key configured: check %s", ccxEnv)
+	}
+
 	return &Proxy{
 		BaseURL: "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
-		APIKey:  "ccx-dff3eccc518d9830",
+		APIKey:  apiKey,
 		Port:    port,
 		Source:  ProxyTypeCCX,
 		ModelMap: modelMap,
@@ -207,9 +215,17 @@ func detectCCSwitch() (*Proxy, error) {
 		}
 	}
 
+		apiKey, keyFound := readEnvFile(ccswitchEnv, "API_KEY")
+	if !keyFound {
+		apiKey, keyFound = readEnvFile(ccswitchEnv, "CCSWITCH_API_KEY")
+	}
+	if !keyFound {
+		return nil, fmt.Errorf("CC-Switch proxy found but no API key configured: check %s", ccswitchEnv)
+	}
+
 	return &Proxy{
 		BaseURL: "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
-		APIKey:  "ccswitch-default-key",
+		APIKey:  apiKey,
 		Port:    port,
 		Source:  ProxyTypeCCSwitch,
 		ModelMap: modelMap,
@@ -230,6 +246,25 @@ func Detect() (*Proxy, error) {
 	}
 
 	return nil, fmt.Errorf("no supported proxy found (CCX Desktop or CC-Switch)")
+}
+
+// readEnvFile parses a simple .env file (KEY=value, one per line) and returns
+// the value for a given key, or ("", false) if not found.
+func readEnvFile(path string, key string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, key+"=") {
+			return strings.TrimSpace(strings.TrimPrefix(line, key+"=")), true
+		}
+		if strings.HasPrefix(line, key+":=") {
+			return strings.TrimSpace(strings.TrimPrefix(line, key+":=")), true
+		}
+	}
+	return "", false
 }
 
 func parsePort(s string) int {
