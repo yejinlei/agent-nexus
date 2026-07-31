@@ -8,6 +8,7 @@ import (
 
 	"agent-nexus/internal/db"
 	"agent-nexus/internal/discover"
+	"agent-nexus/internal/install"
 	"agent-nexus/internal/shared"
 	"agent-nexus/internal/sniff"
 	"github.com/spf13/cobra"
@@ -15,29 +16,31 @@ import (
 
 // ---- shared helpers ----
 
-// agentNameFilter builds a list of AgentInfo from the registry for the given
-// --agents value. "all" returns every registered agent; otherwise it is a
-// comma-separated, case-insensitive list of agent names. Returns an error if
-// any named agent is unknown.
+// agentNameFilter builds a list of AgentInfo for the given --agents value,
+// restricted to the installable runtimes shown by "agent list". "all" returns
+// every installable runtime; otherwise it is a comma-separated, case-insensitive
+// list of agent names. Returns an error if any named agent is unknown.
 func agentNameFilter(agentsFlag string) ([]discover.AgentInfo, error) {
-	registry := discover.GetRegistry()
+	// Authoritative list = what "agent list" shows (install.AllRuntimes()).
+	// Enrich each with the protocol/model fields that the models table needs
+	// from the discover registry.
+	runtimes := install.AllRuntimes()
+	protoMap := discover.ProtocolMap()
+	sourceMap := discover.ModelSourceMap()
+	nativeModelsMap := discover.NativeModelsMap()
+	isConfigurableMap := discover.IsConfigurableMap()
+
 	if strings.EqualFold(agentsFlag, "all") {
-		agents := make([]discover.AgentInfo, 0, len(registry))
-		for _, r := range registry {
-			agents = append(agents, discover.AgentInfo{
-				Name:           r.Name,
-				Category:       r.Category,
-				Protocol:       r.Protocol,
-				IsConfigurable: r.IsConfigurable,
-				Notes:          r.Notes,
-			})
+		agents := make([]discover.AgentInfo, 0, len(runtimes))
+		for _, r := range runtimes {
+			agents = append(agents, toAgentInfo(r, protoMap, sourceMap, nativeModelsMap, isConfigurableMap))
 		}
 		return agents, nil
 	}
 
 	names := strings.Split(agentsFlag, ",")
-	lookup := make(map[string]discover.AgentPath)
-	for _, r := range registry {
+	lookup := make(map[string]install.Agent)
+	for _, r := range runtimes {
 		lookup[strings.ToLower(r.Name)] = r
 	}
 	agents := make([]discover.AgentInfo, 0, len(names))
@@ -50,15 +53,19 @@ func agentNameFilter(agentsFlag string) ([]discover.AgentInfo, error) {
 		if !ok {
 			return nil, fmt.Errorf("未知 agent: %s\n\n可用列表: agent-nexus agent list", n)
 		}
-		agents = append(agents, discover.AgentInfo{
-			Name:           r.Name,
-			Category:       r.Category,
-			Protocol:       r.Protocol,
-			IsConfigurable: r.IsConfigurable,
-			Notes:          r.Notes,
-		})
+		agents = append(agents, toAgentInfo(r, protoMap, sourceMap, nativeModelsMap, isConfigurableMap))
 	}
 	return agents, nil
+}
+
+func toAgentInfo(r install.Agent, protoMap map[string]string, sourceMap map[string]discover.ModelSource, nativeModelsMap map[string]string, isConfigurableMap map[string]bool) discover.AgentInfo {
+	return discover.AgentInfo{
+		Name:           r.Name,
+		Category:       r.Category,
+		Protocol:       protoMap[r.Name],
+		IsConfigurable: isConfigurableMap[r.Name],
+		Notes:          nativeModelsMap[r.Name],
+	}
 }
 
 // dbRecordsForID returns the ProxyRecord(s) addressed by --db <N|all>.

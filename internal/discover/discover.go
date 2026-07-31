@@ -369,6 +369,42 @@ func GetRegistry() []AgentPath {
 	return registry.agents
 }
 
+// ProtocolMap returns a copy of the per-agent protocol labels.
+func ProtocolMap() map[string]string {
+	m := make(map[string]string, len(protocolMap))
+	for k, v := range protocolMap {
+		m[k] = v
+	}
+	return m
+}
+
+// ModelSourceMap returns a copy of the per-agent ModelSource classification.
+func ModelSourceMap() map[string]ModelSource {
+	m := make(map[string]ModelSource, len(modelSourceMap))
+	for k, v := range modelSourceMap {
+		m[k] = v
+	}
+	return m
+}
+
+// NativeModelsMap returns a copy of the per-agent native model descriptions.
+func NativeModelsMap() map[string]string {
+	m := make(map[string]string, len(nativeModelsMap))
+	for k, v := range nativeModelsMap {
+		m[k] = v
+	}
+	return m
+}
+
+// IsConfigurableMap returns a copy of the per-agent configurable flag.
+func IsConfigurableMap() map[string]bool {
+	m := make(map[string]bool, len(registry.agents))
+	for _, a := range registry.agents {
+		m[a.Name] = a.IsConfigurable
+	}
+	return m
+}
+
 // ProtocolExamples returns the model families natively supported by an agent's
 // protocol or built-in AI backend. This is independent of any proxy or config.
 // DEPRECATED: Use ModelSourceForAgent + NativeModelsForAgent instead.
