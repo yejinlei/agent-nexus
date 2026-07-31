@@ -143,8 +143,8 @@ var agentModelsCmd = &cobra.Command{
 	Short: "显示 agent 原生支持的大模型",
 	Long: `显示 agent 运行时本身支持的大模型信息。
 
-默认行为：不加 --agents 时显示所有已发现 agent 的模型支持情况。
---agents <名称,名称,...> 仅显示指定 agent；--agents all 显示全部已注册 agent。
+默认行为：不加 --agents 时显示 "agent list" 支持的 11 个可安装 agent 运行时。
+--agents <名称,名称,...> 仅显示指定 agent；--agents all 显示全部 11 个。
 
 输出内容：
   - Agent 名称与类型（CLI / IDE）
@@ -156,8 +156,8 @@ var agentModelsCmd = &cobra.Command{
 DEPRECATED：旧的 --name / 位置参数 仍可工作，但请使用 --agents。
 
 用法：
-  agent-nexus agent models                  显示所有已发现 agent
-  agent-nexus agent models --agents all     显示全部已注册 agent
+  agent-nexus agent models                  显示 11 个可安装 agent
+  agent-nexus agent models --agents all     同上
   agent-nexus agent models --agents claude  仅显示 claude
   agent-nexus agent models --agents claude,codex
 `,
@@ -185,8 +185,11 @@ DEPRECATED：旧的 --name / 位置参数 仍可工作，但请使用 --agents�
 					return err
 				}
 			} else {
-				// default: all discovered agents on the machine.
-				targetAgents = discover.Discover()
+				// default: the 11 installable runtimes shown by "agent list".
+				targetAgents, err = agentNameFilter("all")
+				if err != nil {
+					return err
+				}
 			}
 		}
 
