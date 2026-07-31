@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -287,6 +288,19 @@ func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, 
 	return err
 }
 
+
+// ExistsByURL checks whether a proxy record with the given URL already exists.
+// Normalises the URL the same way the sniff module does: strips trailing slash
+// and appends "/v1" if absent, so the comparison matches what sniff.Sniff returns.
+func (d *DB) ExistsByURL(url string) bool {
+	url = strings.TrimSuffix(url, "/")
+	if !strings.HasSuffix(url, "/v1") {
+		url += "/v1"
+	}
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM proxies WHERE url = ?", url).Scan(&count)
+	return err == nil && count > 0
+}
 func (d *DB) List() ([]ProxyRecord, error) {
 	rows, err := d.db.Query(`
 		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at

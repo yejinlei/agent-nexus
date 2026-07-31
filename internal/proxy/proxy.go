@@ -37,15 +37,13 @@ func FromFlags(cliURL, cliKey string) (*Proxy, error) {
 	if cliURL == "" && cliKey == "" {
 		return nil, nil
 	}
-
 	if cliURL != "" && cliKey == "" {
 		return nil, fmt.Errorf("--key is required when --url is specified")
 	}
-
 	baseURL := cliURL
 	port := 0
-	u, err := url.Parse(cliURL)
-	if err == nil && u.Host != "" {
+	u, urlErr := url.Parse(cliURL)
+	if urlErr == nil && u.Host != "" {
 		if p, err := strconv.Atoi(u.Port()); err == nil {
 			port = p
 		}
@@ -53,33 +51,29 @@ func FromFlags(cliURL, cliKey string) (*Proxy, error) {
 	if port == 0 {
 		if idx := strings.LastIndex(cliURL, ":"); idx != -1 {
 			portStr := cliURL[idx+1:]
-			if n, _ := strconv.Atoi(portStr); n != 0 {
-				port = n
-			} else {
-				for i, c := range portStr {
-					if c < '0' || c > '9' {
-						if num, err := strconv.Atoi(portStr[:i]); err == nil {
-							port = num
-						}
-						break
-					}
+			for i, c := range portStr {
+				if c < '0' || c > '9' {
+					portStr = portStr[:i]
+					break
 				}
+			}
+			if p, err := parsePort(portStr); err == nil && p != 0 {
+				port = p
 			}
 		}
 	}
 	if port == 0 {
-		if u, err := url.Parse(cliURL); err == nil && u.Scheme == "https" {
+		if u, urlErr := url.Parse(cliURL); urlErr == nil && u.Scheme == "https" {
 			port = 443
 		} else {
 			port = 80
 		}
 	}
-
 	return &Proxy{
-		BaseURL: baseURL,
-		APIKey:  cliKey,
-		Port:    port,
-		Source:  ProxyTypeManual,
+		BaseURL:  baseURL,
+		APIKey:   cliKey,
+		Port:     port,
+		Source:   ProxyTypeManual,
 		ModelMap: map[string]string{},
 	}, nil
 }
@@ -90,12 +84,9 @@ func detectCCXDesktop() (*Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	ccxConfig := filepath.Join(home, "AppData", "Roaming", "ccx-desktop", ".config", "config.json")
 	ccxEnv := filepath.Join(home, "AppData", "Roaming", "ccx-desktop", ".env")
-
 	var modelMap map[string]string
-
 	if data, err := os.ReadFile(ccxConfig); err == nil {
 		var cfg struct {
 			ResponsesUpstream []struct {
@@ -105,7 +96,9 @@ func detectCCXDesktop() (*Proxy, error) {
 				ModelMapping map[string]string `json:"modelMapping"`
 			} `json:"chatUpstream"`
 		}
-		if err := json.Unmarshal(data, &cfg); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: detectCCXDesktop: failed to parse config.json: "+err.Error())
+		} else {
 			modelMap = make(map[string]string)
 			for _, u := range cfg.ResponsesUpstream {
 				for k, v := range u.ModelMapping {
@@ -119,55 +112,47 @@ func detectCCXDesktop() (*Proxy, error) {
 			}
 		}
 	}
-
 	port := 3688
 	if data, err := os.ReadFile(ccxEnv); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.HasPrefix(line, "PORT=") {
 				portStr := strings.TrimPrefix(line, "PORT=")
-				port = parsePort(portStr)
+				if p, err := parsePort(portStr); err == nil {
+					port = p
+				} else {
+					fmt.Fprintln(os.Stderr, "warning: CCX Desktop PORT value is invalid: "+err.Error())
+				}
 			}
 		}
 	}
-
-		apiKey, keyFound := readEnvFile(ccxEnv, "API_KEY")
+	apiKey, keyFound := readEnvFile(ccxEnv, "API_KEY")
 	if !keyFound {
 		apiKey, keyFound = readEnvFile(ccxEnv, "OPENAI_API_KEY")
 	}
 	if !keyFound {
 		return nil, fmt.Errorf("CCX Desktop proxy found but no API key configured: check %s", ccxEnv)
 	}
-
 	return &Proxy{
-		BaseURL: "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
-		APIKey:  apiKey,
-		Port:    port,
-		Source:  ProxyTypeCCX,
+		BaseURL:  "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
+		APIKey:   apiKey,
+		Port:     port,
+		Source:   ProxyTypeCCX,
 		ModelMap: modelMap,
 	}, nil
 }
 
 // detectCCSwitch scans known locations for CC-Switch proxy config.
-// CC-Switch stores its config at:
-//   ~\AppData\Roaming\cc-switch\.config\config.json
-//   ~\AppData\Roaming\cc-switch\.env
-// It supports model mapping and uses a configurable port (default 3688).
 func detectCCSwitch() (*Proxy, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-
 	ccswitchConfig := filepath.Join(home, "AppData", "Roaming", "cc-switch", ".config", "config.json")
 	ccswitchEnv := filepath.Join(home, "AppData", "Roaming", "cc-switch", ".env")
-
-	// Check if CC-Switch config exists
 	if _, err := os.Stat(ccswitchConfig); os.IsNotExist(err) {
 		return nil, nil
 	}
-
 	var modelMap map[string]string
-
 	if data, err := os.ReadFile(ccswitchConfig); err == nil {
 		var cfg struct {
 			ResponsesUpstream []struct {
@@ -181,7 +166,9 @@ func detectCCSwitch() (*Proxy, error) {
 			} `json:"upstreams"`
 			ModelMapping map[string]string `json:"modelMapping"`
 		}
-		if err := json.Unmarshal(data, &cfg); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: detectCCSwitch: failed to parse config.json: "+err.Error())
+		} else {
 			modelMap = make(map[string]string)
 			for _, u := range cfg.ResponsesUpstream {
 				for k, v := range u.ModelMapping {
@@ -203,53 +190,46 @@ func detectCCSwitch() (*Proxy, error) {
 			}
 		}
 	}
-
 	port := 3688
 	if data, err := os.ReadFile(ccswitchEnv); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
+			_ = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "PORT=") {
 				portStr := strings.TrimPrefix(line, "PORT=")
-				port = parsePort(portStr)
+				if p, err := parsePort(portStr); err == nil {
+					port = p
+				} else {
+					fmt.Fprintln(os.Stderr, "warning: CC-Switch PORT value is invalid: "+err.Error())
+				}
 			}
 		}
 	}
-
-		apiKey, keyFound := readEnvFile(ccswitchEnv, "API_KEY")
+	apiKey, keyFound := readEnvFile(ccswitchEnv, "API_KEY")
 	if !keyFound {
 		apiKey, keyFound = readEnvFile(ccswitchEnv, "CCSWITCH_API_KEY")
 	}
 	if !keyFound {
 		return nil, fmt.Errorf("CC-Switch proxy found but no API key configured: check %s", ccswitchEnv)
 	}
-
 	return &Proxy{
-		BaseURL: "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
-		APIKey:  apiKey,
-		Port:    port,
-		Source:  ProxyTypeCCSwitch,
+		BaseURL:  "http://127.0.0.1:" + fmt.Sprintf("%d", port) + "/v1",
+		APIKey:   apiKey,
+		Port:     port,
+		Source:   ProxyTypeCCSwitch,
 		ModelMap: modelMap,
 	}, nil
 }
 
-// Detect scans known locations for CCX Desktop and CC-Switch proxy config.
-// Priority: CCX Desktop -> CC-Switch -> return nil if neither found.
 func Detect() (*Proxy, error) {
-	// Try CCX Desktop first
 	if p, err := detectCCXDesktop(); err == nil {
 		return p, nil
 	}
-
-	// Fall back to CC-Switch
 	if p, err := detectCCSwitch(); err == nil {
 		return p, nil
 	}
-
 	return nil, fmt.Errorf("no supported proxy found (CCX Desktop or CC-Switch)")
 }
 
-// readEnvFile parses a simple .env file (KEY=value, one per line) and returns
-// the value for a given key, or ("", false) if not found.
 func readEnvFile(path string, key string) (string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -267,13 +247,22 @@ func readEnvFile(path string, key string) (string, bool) {
 	return "", false
 }
 
-func parsePort(s string) int {
-	n := 0
+// parsePort parses a strict numeric port string.
+// Rejects any value that is not purely digits (with optional surrounding whitespace).
+// Returns (port, nil) on success or (0, error) if the value contains non-numeric suffixes.
+func parsePort(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
 	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			n = n*10 + int(c-'0')
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid port: %q", s)
 		}
 	}
-	return n
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port: %q", s)
+	}
+	return n, nil
 }
-

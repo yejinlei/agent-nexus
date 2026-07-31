@@ -2,7 +2,10 @@ package db
 
 import (
 	"crypto/sha256"
+	"database/sql"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -309,5 +312,42 @@ func TestBackupSnapshotProxyIDNullable(t *testing.T) {
 	}
 	if s.ProxyID != nil {
 		t.Errorf("ProxyID should be nil, got %v", s.ProxyID)
+	}
+}
+
+
+func TestExistsByURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	sqlDB, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=rwc", filepath.Join(tmpDir, "test.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	d := &DB{db: sqlDB}
+	if err := d.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty DB
+	if d.ExistsByURL("http://example.com") {
+		t.Fatal("expected empty DB to return false")
+	}
+	if d.ExistsByURL("http://example.com/v1") {
+		t.Fatal("expected empty DB to return false for /v1")
+	}
+
+	// Insert a proxy (URL stored without normalisation)
+	if err := d.Add("http://example.com/v1", "key1", "OpenAI", true, false, 1, []string{"m1"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !d.ExistsByURL("http://example.com/v1") {
+		t.Fatal("expected true for exact match with /v1")
+	}
+	if !d.ExistsByURL("http://example.com") {
+		t.Fatal("expected true for URL without /v1 (normalised)")
+	}
+	if d.ExistsByURL("http://other.com/v1") {
+		t.Fatal("expected false for non-existent URL")
 	}
 }

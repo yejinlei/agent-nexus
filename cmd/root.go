@@ -799,6 +799,38 @@ var proxySniffCmd = &cobra.Command{
 			}
 		}
 		fmt.Println()
+
+		// Auto-save to DB when models are successfully detected; skip if URL already in DB.
+		if result.ModelCount > 0 {
+			dbPath := filepath.Join(userHomeDir(), ".agent-nexus", "proxies.db")
+			dir := filepath.Dir(dbPath)
+			if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
+				fmt.Printf("⚠ 保存失败 (创建目录): %v\n", mkdirErr)
+			} else {
+				dbInst, openErr := db.New()
+				if openErr != nil {
+					fmt.Printf("⚠ 保存失败 (打开数据库): %v\n", openErr)
+				} else {
+					defer dbInst.Close()
+					if initErr := dbInst.Init(); initErr != nil {
+						fmt.Printf("⚠ 保存失败 (初始化数据库): %v\n", initErr)
+					} else if dbInst.ExistsByURL(result.BaseURL) {
+						fmt.Printf("ℹ 已存在，跳过重复添加: %s\n", result.BaseURL)
+					} else {
+						modelIDs := make([]string, 0, len(result.Models))
+						for _, m := range result.Models {
+							modelIDs = append(modelIDs, m.ID)
+						}
+						if addErr := dbInst.Add(result.BaseURL, sniffKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
+							fmt.Printf("⚠ 保存失败: %v\n", addErr)
+						} else {
+							fmt.Printf("✅ 已自动保存到数据库: %s\n", result.BaseURL)
+						}
+					}
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -1635,7 +1667,7 @@ func initConfCmd() {
 该命令用于在自动配置前确认代理当前实际接入的模型。
 支持通过全局 --url / --key 指定代理，或使用自动检测。
 `,
-		RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := getProxySettings()
 			if err != nil || p == nil {
 				return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
@@ -1749,27 +1781,68 @@ func executePipCommand(args string) error {
 }
 
 // executeRemoteScript downloads a remote installer script (install.ps1/install.sh)
-// and executes it via powershell.exe (Windows).
-//
-// It downloads the raw script content (not a URL) and runs it via -Command to avoid
-// two issues:
-//  1. Passing a URL directly to -Command makes PowerShell treat it as a local command name.
-//
-// It downloads the script, saves it to a temp .ps1 file, then runs it with
+// using Go's HTTP client, saves it to a temp .ps1 file, and executes it with
 // powershell.exe -File. Using -File instead of -Command is critical on
 // Windows PowerShell 5.1: -Command with -NoProfile prevents the auto-loading
 // of core modules (Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security
 // etc.) that many installers depend on (e.g. Get-FileHash for checksum
 // verification). -File loads all built-in modules automatically.
+//
+// Go's HTTP client is used for the initial download to avoid the SSL compatibility
+// issues that affect PowerShell's Invoke-RestMethod / Invoke-WebRequest on
+// certain endpoints. Proxy-related environment variables are stripped from the
+// subprocess environment so that Invoke-WebRequest inside the script always
+// goes direct, avoiding proxy-intercepted responses that may be HTML.
 func executeRemoteScript(url string) error {
-	getFileHash := "function Get-FileHash { param([string]$Path,[string]$Algorithm='SHA256') $h=[System.Security.Cryptography.HashAlgorithm]::Create($Algorithm);$b=[System.IO.File]::ReadAllBytes($Path);$s=[System.Text.StringBuilder]::new();foreach($x in $h.ComputeHash($b)){$s.Append($x.ToString('x2'))|Out-Null};return @{Hash=$s.ToString()} }"
-	cmdStr := getFileHash + "; irm " + url + " | iex"
-	psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	cmd := exec.Command(psPath, "-ExecutionPolicy", "Bypass", "-Command", cmdStr)
-	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download script %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download script %s: HTTP %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read script body: %w", err)
+	}
+	if len(body) == 0 {
+		return fmt.Errorf("empty script downloaded from %s", url)
+	}
+	firstLine := strings.ToLower(string(body[:min(512, len(body))]))
+	if strings.Contains(firstLine, "<html") || strings.Contains(firstLine, "<!doctype") || strings.Contains(firstLine, "<head") {
+		return fmt.Errorf("script %s returned HTML instead of a script: %s", url, resp.Header.Get("Content-Type"))
+	}
+	tmpDir := os.TempDir()
+	tmpFile := filepath.Join(tmpDir, "installer_" + filepath.Base(url) + ".ps1")
+	if err := os.WriteFile(tmpFile, body, 0644); err != nil {
+		return fmt.Errorf("failed to write temp script file: %w", err)
+	}
+	defer os.Remove(tmpFile)
+	if runtime.GOOS == "windows" {
+		psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+		envVars := make([]string, 0, len(os.Environ()))
+		for _, ev := range os.Environ() {
+			key := strings.ToUpper(strings.SplitN(ev, "=", 2)[0])
+			if key == "HTTP_PROXY" || key == "HTTPS_PROXY" || key == "ALL_PROXY" || key == "NO_PROXY" {
+				continue
+			}
+			envVars = append(envVars, ev)
+		}
+		cmd := exec.Command(psPath, "-ExecutionPolicy", "Bypass", "-File", tmpFile)
+		cmd.Env = envVars
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	// Unix: execute via sh for shell scripts
+	if strings.HasSuffix(url, ".sh") || strings.Contains(string(body), "#!/bin/sh") || strings.Contains(string(body), "#!/bin/bash") {
+		cmd := exec.Command("sh", tmpFile)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	return fmt.Errorf("unsupported script type for %s on %s", url, runtime.GOOS)
 }
 
 func executeCommand(fullCmd string) error {
@@ -1781,9 +1854,24 @@ func executeCommand(fullCmd string) error {
 	return cmd.Run()
 }
 
+// openInBrowser opens a URL in the system's default web browser.
+// Returns nil on success, or the underlying error.
+func openInBrowser(url string) error {
+	runtime := runtime.GOOS
+	switch runtime {
+	case "windows":
+		return exec.Command("cmd", "/c", "start", "", url).Run()
+	case "darwin":
+		return exec.Command("open", url).Run()
+	default:
+		return exec.Command("xdg-open", url).Run()
+	}
+}
+
 // executeDownloadedFile downloads a file from a URL to a temp location,
 // executes it, and removes it afterwards. Handles both .exe binaries and .ps1 scripts.
-// Returns an error if the downloaded content is HTML (e.g. a placeholder web page).
+// If the response is HTML (a web page rather than a direct download), it opens
+// the URL in the default browser so the user can complete the install manually.
 func executeDownloadedFile(url string) error {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -1808,7 +1896,7 @@ func executeDownloadedFile(url string) error {
 		return fmt.Errorf("failed to download %s: content too large (> 100 MB)", url)
 	}
 
-	// Reject HTML content (placeholder web pages, not actual installers)
+	// Detect HTML response (web page rather than a direct download)
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	firstLine := strings.ToLower(string(body[:min(512, len(body))]))
 	isHTML := strings.Contains(contentType, "text/html") ||
@@ -1817,7 +1905,10 @@ func executeDownloadedFile(url string) error {
 		strings.Contains(firstLine, "<head") ||
 		strings.Contains(firstLine, "<body")
 	if isHTML {
-		return fmt.Errorf("failed to install: %s is a web page, not a downloadable file (got Content-Type: %s)", url, resp.Header.Get("Content-Type"))
+		fmt.Printf("\n[提示] %s 是一个网页，正在打开浏览器...\n", url)
+		fmt.Printf("\n请在浏览器中完成下载，安装完成后运行: agent-nexus agent discover 确认\n\n")
+		_ = openInBrowser(url)
+		return nil
 	}
 
 	tmpDir := os.TempDir()
