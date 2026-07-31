@@ -4,7 +4,7 @@
 
 agent-nexus 是 coding agent 配置领域的 `/etc/hosts`：一条命令，把散落在本机各处的 LLM endpoint 和 API Key 统一重定向到一个 AI 消息网关。
 
-当前支持 26 个 agent（16 个可配置 + 10 个不可配置），覆盖 CLI 和 IDE 两大类。
+当前支持 11 个 agent，覆盖 CLI 和 IDE 两大类。
 
 ## 架构
 
@@ -29,7 +29,7 @@ agent-nexus 是 coding agent 配置领域的 `/etc/hosts`：一条命令，把�
 | 阶段 | 动作 | 命令 |
 |------|------|------|
 | ① 检查运行时依赖 | node/npm、python/pip、git | `agent-nexus pre check` |
-| ② 安装 Agent 运行时 | codex/claude/kimi 等 26 个 agent | `agent-nexus agent install codex` |
+| ② 安装 Agent 运行时 | codex/claude/kimi 等 11 个 agent | `agent-nexus agent install codex` |
 | ③ 统一配置 | 检测代理 → 备份 → 写入配置 | `agent-nexus conf set --agents all` |
 | ④ 验证 | 扫描 + 显示配置状态 | `agent-nexus agent discover` |
 
@@ -73,43 +73,23 @@ agent-nexus [command]
 
 详细用法见 [MANUAL.md](MANUAL.md)。
 
-## 支持的 Agent（26 个）
+## 支持的 Agent（11 个）
 
-### 可配置（通过代理转发）— 16 个
+| Agent | 类型 | 协议 | 安装方式 | 说明 |
+|-------|------|------|----------|------|
+| codex | CLI | OpenAI Compatible | npm `@openai/codex` | 任意上游模型 |
+| claude | CLI | OpenAI Compatible | npm `@anthropic-ai/claude-code` | 任意上游模型 |
+| kimi | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
+| opencode | CLI | OpenAI Compatible | npm `opencode-ai` | 任意上游模型 |
+| openclaw | CLI | OpenAI Compatible | 官方安装脚本 | 任意上游模型 |
+| openclaude | CLI | OpenAI Compatible | npm `@gitlawb/openclaude` | .env 格式配置 |
+| cursor | IDE | OpenAI Compatible | 官方下载页 | VS Code 派生 IDE |
+| hermes | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
+| kiro | CLI | ACP | 暂不可用 | 待官方提供安装方式 |
+| grok | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
+| gemini | CLI | 无 | npm `@google/gemini-cli` | Google auth（OAuth/API key） |
 
-| Agent | 类型 | 协议 | 说明 |
-|-------|------|------|------|
-| codex | CLI | OpenAI Compatible | 任意上游模型 |
-| claude | CLI | OpenAI Compatible | 任意上游模型 |
-| kimi | CLI | ACP | 需代理路由映射 |
-| deepseek | CLI | OpenAI Compatible | 任意上游模型 |
-| opencode | CLI | OpenAI Compatible | 任意上游模型 |
-| openclaw | CLI | OpenAI Compatible | 任意上游模型 |
-| openclaude | CLI | OpenAI Compatible | .env 格式配置 |
-| cursor | IDE | OpenAI Compatible | VS Code 派生 |
-| codebuddy | CLI | OpenAI Compatible | Claude Code 兼容 |
-| hermes | CLI | ACP | 需代理路由映射 |
-| kiro | CLI | ACP | 需代理路由映射 |
-| grok | CLI | ACP | 需代理路由映射 |
-| qoder | CLI | ACP | 需代理路由映射 |
-| trae | CLI | ACP | 需代理路由映射 |
-| lmstudio | CLI | OpenAI Compatible | 本地 LLM（localhost） |
-| clawx | IDE | OpenAI Compatible | 任意上游模型 |
-
-### 不可配置（无外部模型配置字段）— 10 个
-
-| Agent | 类型 | 说明 |
-|-------|------|------|
-| antigravity | CLI | Google Gemini，OAuth/API key 认证 |
-| copilot | CLI | 模型由 GitHub 账号权益决定 |
-| deveco | CLI | 华为 OpenCode 引擎，自有模型目录 |
-| gemini | CLI | Google Gemini CLI，Google auth |
-| pi | CLI | Inflection Pi，npm 包 |
-| qoder-ide | IDE | 自有 AI 后端 |
-| trae-ide | IDE | 自有 AI 后端 |
-| codebuddy-ide | IDE | 自有 AI 后端 |
-| windsurf | IDE | 自有 AI 后端 |
-| zed | IDE | 无内置 AI Agent |
+已移除的 agent（无公开安装方式）：qoder、trae、codebuddy、lmstudio、clawx
 
 ## 安装 Agent 运行时
 

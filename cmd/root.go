@@ -1783,6 +1783,7 @@ func executeCommand(fullCmd string) error {
 
 // executeDownloadedFile downloads a file from a URL to a temp location,
 // executes it, and removes it afterwards. Handles both .exe binaries and .ps1 scripts.
+// Returns an error if the downloaded content is HTML (e.g. a placeholder web page).
 func executeDownloadedFile(url string) error {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -1793,13 +1794,47 @@ func executeDownloadedFile(url string) error {
 		return fmt.Errorf("failed to download %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit download to 100 MB to avoid downloading arbitrary large content
+	maxBody := int64(100 * 1024 * 1024)
+	var body []byte
+	if resp.ContentLength > 0 && resp.ContentLength > maxBody {
+		return fmt.Errorf("failed to download %s: content too large (%d bytes)", url, resp.ContentLength)
+	}
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return fmt.Errorf("failed to read download body: %w", err)
 	}
+	if int64(len(body)) > maxBody {
+		return fmt.Errorf("failed to download %s: content too large (> 100 MB)", url)
+	}
+
+	// Reject HTML content (placeholder web pages, not actual installers)
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	firstLine := strings.ToLower(string(body[:min(512, len(body))]))
+	isHTML := strings.Contains(contentType, "text/html") ||
+		strings.Contains(firstLine, "<html") ||
+		strings.Contains(firstLine, "<!doctype") ||
+		strings.Contains(firstLine, "<head") ||
+		strings.Contains(firstLine, "<body")
+	if isHTML {
+		return fmt.Errorf("failed to install: %s is a web page, not a downloadable file (got Content-Type: %s)", url, resp.Header.Get("Content-Type"))
+	}
 
 	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, filepath.Base(url))
+	tmpName := filepath.Base(url)
+	if tmpName == "" || tmpName == "." || tmpName == "/" {
+		tmpName = "installer.exe"
+	}
+	tmpFile := filepath.Join(tmpDir, tmpName)
+
+	// On Windows, ensure the temp file has a valid extension for the execution mode
+	ext := strings.ToLower(filepath.Ext(tmpFile))
+	if runtime.GOOS == "windows" && ext != ".exe" && ext != ".ps1" && ext != "" {
+		// Add .exe extension if it looks like a binary
+		_ = os.Remove(tmpFile)
+		tmpFile = tmpFile + ".exe"
+	}
+
 	if err := os.WriteFile(tmpFile, body, 0755); err != nil {
 		return fmt.Errorf("failed to write downloaded file: %w", err)
 	}
