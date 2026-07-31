@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
@@ -183,7 +182,6 @@ var agentCmd = &cobra.Command{
 
 var discoverVerbose bool
 
-var agentModelsName string
 
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
@@ -615,77 +613,6 @@ DEPRECATED: 此命令已弃用，请使用 "agent-nexus conf set" 作为统一�
 	},
 }
 
-var agentModelsCmd = &cobra.Command{
-	Use:   "models [name]",
-	Short: "显示 agent 原生支持的模型",
-	Long: `显示每个 agent 运行时本身支持的模型（LLM）信息。
-
-输出内容：
-  - Agent 名称与类型（CLI / IDE）
-  - 协议类型（OpenAI 兼容 / ACP / N/A）
-  - 模型来源：自定义模型 / 需重定向 / 自有模型
-  - 模型列表：agent 本身可接受的模型名
-  - 说明：备注信息
-
-用法：
-  agent-nexus agent models              显示所有 agent 的模型信息
-  agent-nexus agent models --name codex  查询特定 agent
-  agent-nexus agent models claude        同上（位置参数）
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		var targetName string
-		if len(args) > 0 {
-			targetName = args[0]
-		} else if agentModelsName != "" {
-			targetName = agentModelsName
-		}
-
-		agents := discover.Discover()
-
-		if targetName != "" {
-			found := false
-			for _, a := range agents {
-				if a.Name == targetName {
-					agents = []discover.AgentInfo{a}
-					found = true
-					break
-				}
-			}
-			if !found {
-				for _, reg := range discover.GetRegistry() {
-					if reg.Name == targetName {
-						agents = []discover.AgentInfo{{
-							Name:           reg.Name,
-							Category:       reg.Category,
-							Protocol:       reg.Protocol,
-							IsConfigurable: reg.IsConfigurable,
-							Notes:          reg.Notes,
-						}}
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				return fmt.Errorf("未找到 agent: %s\n\n可用列表: agent-nexus agent list", targetName)
-			}
-		}
-
-		if len(agents) == 0 {
-			fmt.Println("未发现任何 agent。")
-			fmt.Println()
-			return nil
-		}
-
-		if targetName != "" {
-			fmt.Printf("Agent: %s\n\n", targetName)
-		}
-
-		discover.RenderModelTable(agents)
-		return nil
-	},
-}
-
 func initAgentCmd() {
 	agentDiscoverCmd.Flags().BoolVarP(&discoverVerbose, "verbose", "v", false, "显示 agent 支持的所有模型及模型来源（自定义 vs. 模型重定义）")
 	agentInstallCmd.Flags().BoolVarP(&installAll, "all", "a", false, "安装全部 CLI agent")
@@ -696,7 +623,6 @@ func initAgentCmd() {
 	agentConfigureCmd.MarkFlagRequired("agents")
 	agentConfigureCmd.Flags().StringVar(&configureModels, "models", "", "覆盖模型映射，格式: agent=模型名，agent2=模型名")
 
-	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "指定 agent 名称（可选，不指定则显示所有）")
 
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -704,7 +630,10 @@ func initAgentCmd() {
 	agentCmd.AddCommand(agentUninstallCmd)
 	agentCmd.AddCommand(agentUpdateCmd)
 	agentCmd.AddCommand(agentConfigureCmd)
+	initModelsCmds()
 	agentCmd.AddCommand(agentModelsCmd)
+	proxyCmd.AddCommand(proxyModelsCmd)
+	confCmd.AddCommand(confModelsCmd)
 }
 
 // ========== PROXY GROUP ==========
@@ -1659,49 +1588,7 @@ func initConfCmd() {
 	confCmd.AddCommand(confSetCmd)
 	confCmd.AddCommand(confAutoCmd)
 
-	var confUpstreamModelsCmd = &cobra.Command{
-		Use:   "upstream-models",
-		Short: "查询 AI 代理上游模型列表",
-		Long: `查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
-
-该命令用于在自动配置前确认代理当前实际接入的模型。
-支持通过全局 --url / --key 指定代理，或使用自动检测。
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := getProxySettings()
-			if err != nil || p == nil {
-				return fmt.Errorf("未检测到 AI 代理配置: %v\n请使用 --url 和 --key 指定代理，或确保代理正在运行", err)
-			}
-			fmt.Printf("AI 代理: %s (%s)\n", p.Source, p.BaseURL)
-			models := sniff.UpstreamModelList(p.BaseURL, p.APIKey)
-			if len(models) == 0 {
-				fmt.Println("上游模型列表为空。")
-				return nil
-			}
-			sorted := make([]string, len(models))
-			copy(sorted, models)
-			sort.Strings(sorted)
-			fmt.Printf("上游可用模型 (%d)：\n", len(models))
-			fmt.Println(strings.Repeat("-", 60))
-			for idx, m := range sorted {
-				if idx%4 == 0 {
-					fmt.Printf("  ")
-				}
-				display := m
-				if len(display) > 28 {
-					display = display[:27] + "."
-				}
-				fmt.Printf("%-30s", display)
-				if idx%4 == 3 {
-					fmt.Println()
-				}
-			}
-			fmt.Println()
-			return nil
-		},
-	}
-
-	confCmd.AddCommand(confUpstreamModelsCmd)
+	initConfUpstreamModels()
 }
 
 // ========== INIT ==========
