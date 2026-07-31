@@ -14,22 +14,17 @@ import (
 func newTestDB(t *testing.T) (*DB, func()) {
 	t.Helper()
 	tmpDir := t.TempDir()
-	// Override cwd so New() opens our temp db.
-	origCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Chdir: %v", err)
+	dbPath := filepath.Join(tmpDir, "proxies.db")
+	// Use the env-var hook so each test opens its own isolated DB.
+	if err := os.Setenv("AGENT_NEXUS_DB_PATH", dbPath); err != nil {
+		t.Fatalf("Setenv: %v", err)
 	}
 	d, err := New()
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Override the internal db path by re-opening with our path directly.
-	// (New() already opened the file at tmpDir/proxies.db, which is what we want.)
 	cleanup := func() {
-		_ = os.Chdir(origCwd)
+		os.Unsetenv("AGENT_NEXUS_DB_PATH")
 		_ = d.Close()
 	}
 	return d, cleanup

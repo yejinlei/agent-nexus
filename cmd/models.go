@@ -75,7 +75,7 @@ func dbRecordsForID(dbFlag string) ([]db.ProxyRecord, error) {
 	dbInst, err := db.New()
 	if err != nil {
 		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "file:..") {
-			fmt.Printf("提示: 数据库文件不存在，请先运行 proxy sniff / proxy db add 添加代理配置。\n")
+			fmt.Printf("提示: 数据库文件不存在，请先运行 sniff / db add 添加代理配置。\n")
 			return nil, nil
 		}
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
@@ -209,7 +209,7 @@ var proxyModelsCmd = &cobra.Command{
 	Use:   "models --db <N|all>",
 	Short: "显示 AI 网关/厂家支持的大模型",
 	Long: `显示 AI 网关/厂家支持的大模型列表。模型来自已嗅探并保存到数据库的代理配置
-(proxy sniff / proxy db add)，或实时从代理 /v1/models 拉取。
+(sniff / db add)，或实时从代理 /v1/models 拉取。
 
 默认行为：不加 --db 时，显示 DB 记录 1 的模型。
 --db <N> 显示指定 ID 的代理记录的模型；--db all 显示数据库中所有记录。
@@ -438,7 +438,7 @@ var confModelsCmd = &cobra.Command{
 		}
 		if len(records) == 0 {
 			fmt.Println("数据库中没有任何代理配置记录，无法匹配。")
-			fmt.Println("请先运行 proxy sniff / proxy db add 添加代理配置。")
+			fmt.Println("请先运行 sniff / db add 添加代理配置。")
 			fmt.Println()
 			return nil
 		}

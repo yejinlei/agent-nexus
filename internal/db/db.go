@@ -55,21 +55,34 @@ type DB struct {
 }
 
 func New() (*DB, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("get working directory: %w", err)
+	// Override hook for tests / portable setups: env wins when set.
+	if env := os.Getenv("AGENT_NEXUS_DB_PATH"); env != "" {
+		return newDB(env)
 	}
-	dbPath := filepath.Join(cwd, "proxies.db")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("get user home: %w", err)
+	}
+	dbPath := filepath.Join(home, ".agent-nexus", "proxies.db")
+	return newDB(dbPath)
+}
+
+func newDB(dbPath string) (*DB, error) {
+	dir := filepath.Dir(dbPath)
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create db directory: %w", err)
+		}
+	}
 	connStr := fmt.Sprintf("file:%s?mode=rwc", dbPath)
 	sqlDB, err := sql.Open("sqlite", connStr)
-	// Enable foreign keys (PRAGMA is not effective via URL param in modernc.org/sqlite).
-	_, _ = sqlDB.Exec("PRAGMA foreign_keys = ON")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	// Enable foreign keys (PRAGMA is not effective via URL param in modernc.org/sqlite).
+	_, _ = sqlDB.Exec("PRAGMA foreign_keys = ON")
 	return &DB{db: sqlDB}, nil
 }
-
 func (d *DB) Close() error {
 	if d.db != nil {
 		return d.db.Close()
