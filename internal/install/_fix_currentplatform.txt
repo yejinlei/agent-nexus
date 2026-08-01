@@ -1,0 +1,11 @@
+func CurrentPlatform() string {
+	switch runtime.GOOS {
+	case "windows":
+		return PlatformWindows
+	case "darwin":
+		return PlatformDarwin
+	default:
+		return PlatformLinux
+	}
+}
+
