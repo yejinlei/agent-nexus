@@ -12,7 +12,7 @@ import (
 
 func TestWriterRegistry_Get(t *testing.T) {
 	reg := NewWriterRegistry()
-	for _, expected := range []string{"codex", "claude", "kimi", "deepseek", "opencode", "openclaw", "cursor", "codebuddy", "hermes", "kiro", "grok", "qoder", "trae"} {
+	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "cursor", "hermes", "kiro", "grok", "openclaude"} {
 		w := reg.Get(expected)
 		if w == nil {
 			t.Errorf("registry missing writer for %s", expected)
@@ -95,7 +95,7 @@ func testWriterConfigureAndStatus(t *testing.T, writerName string) {
 
 	// Writers that read existing files need a pre-existing config.
 	needsJSON := writerName == "claude" || writerName == "cursor" || writerName == "opencode" ||
-		writerName == "openclaw" || writerName == "codebuddy"
+		writerName == "openclaw"
 	needsTOML := writerName == "codex"
 
 	if needsJSON {
@@ -153,16 +153,12 @@ os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 func TestCodexWriter(t *testing.T) { testWriterConfigureAndStatus(t, "codex") }
 func TestClaudeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "claude") }
 func TestKimiWriter(t *testing.T) { testWriterConfigureAndStatus(t, "kimi") }
-func TestDeepSeekWriter(t *testing.T) { testWriterConfigureAndStatus(t, "deepseek") }
 func TestOpenCodeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "opencode") }
 func TestOpenClawWriter(t *testing.T) { testWriterConfigureAndStatus(t, "openclaw") }
 func TestCursorWriter(t *testing.T) { testWriterConfigureAndStatus(t, "cursor") }
-func TestCodeBuddyWriter(t *testing.T) { testWriterConfigureAndStatus(t, "codebuddy") }
 func TestHermesWriter(t *testing.T) { testWriterConfigureAndStatus(t, "hermes") }
 func TestKiroWriter(t *testing.T) { testWriterConfigureAndStatus(t, "kiro") }
 func TestGrokWriter(t *testing.T) { testWriterConfigureAndStatus(t, "grok") }
-func TestQoderWriter(t *testing.T) { testWriterConfigureAndStatus(t, "qoder") }
-func TestTraeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "trae") }
 
 // ---- Individual writer content tests ----
 
@@ -244,23 +240,6 @@ func TestCursorWriter_Content(t *testing.T) {
 	}
 	if cfg["cursor.ai.chat.model"] != "sensenova-6.7-flash-lite" {
 		t.Errorf("model = %v, want sensenova-6.7-flash-lite", cfg["cursor.ai.chat.model"])
-	}
-}
-
-func TestDeepSeekWriter_Content(t *testing.T) {
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "config.toml")
-
-	w := NewWriterRegistry().Get("deepseek")
-	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
-
-	if err := w.Configure(cfgPath, p, ""); err != nil {
-		t.Fatalf("Configure error = %v", err)
-	}
-	data, _ := os.ReadFile(cfgPath)
-	s := string(data)
-	if !containsAll(s, "api_key", "base_url", "default_text_model") {
-		t.Errorf("deepseek config missing expected fields. Got:\n%s", s)
 	}
 }
 
