@@ -217,16 +217,6 @@ agent-nexus agent update codex
 agent-nexus agent update claude
 ```
 
-### agent configure（已弃用）
-
-> **已弃用，请使用 `agent-nexus conf set` 作为统一配置入口。**
-
-```powershell
-agent-nexus agent configure --agents all
-agent-nexus agent configure --agents codex,claude
-agent-nexus agent configure --agents all --models "codex=gpt-5.5"
-```
-
 ### agent models
 
 显示每个 agent 运行时本身支持的模型（LLM）信息：

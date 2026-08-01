@@ -53,7 +53,6 @@ var rootCmd = &cobra.Command{
   agent-nexus agent install <name>  安装 agent 运行时
   agent-nexus agent uninstall <name> 卸载指定 agent
   agent-nexus agent update <name>   更新指定 agent
-  agent-nexus agent configure --agents all  配置所有已安装 agent
   agent-nexus proxy detect          检测 AI 代理配置
   agent-nexus proxy route           显示模型路由表
   agent-nexus proxy sniff           嗅探 LLM 提供商消息格式与模型
@@ -179,7 +178,6 @@ var agentCmd = &cobra.Command{
   install   安装指定 agent
   uninstall 卸载指定 agent
   update    更新指定 agent
-  configure 配置 agent（需 --agents，先备份再写入）
   models    显示 agent 支持的模型及模型支持情况
 `,
 }
@@ -572,68 +570,17 @@ var agentUpdateCmd = &cobra.Command{
 	},
 }
 
-var (
-	configureAgents string
-	configureModels string
-)
-
-var agentConfigureCmd = &cobra.Command{
-	Use:   "configure --agents <agent1[,agent2,...]|all>",
-	Short: "备份后配置指定 agent（需 --agents）",
-	Long: `配置指定 agent 运行时，先自动备份，再写入 AI 代理配置。
-
-DEPRECATED: 此命令已弃用，请使用 "agent-nexus conf set" 作为统一配置入口。
-
-必选参数:
-  --agents  要配置的 agent（逗号分隔），或用 all 配置所有已安装 agent
-
-可选参数:
-  --models  覆盖模型映射，格式: "agent=模型名,agent2=模型名"
-
-配置前自动创建快照，支持回滚。
-
-示例:
-  agent-nexus agent configure --agents all
-  agent-nexus agent configure --agents claude,kimi
-  agent-nexus agent configure --agents codex
-  agent-nexus agent configure --agents all --models "codex=gpt-5.5"
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if configureAgents == "" {
-			return fmt.Errorf("--agents 为必选参数，使用 all 配置所有已安装 agent")
-		}
-
-		fmt.Println("WARNING: 'agent configure' 已弃用，请使用 'agent-nexus conf set'。")
-		fmt.Println()
-
-		// Delegate to unified runConfSet with branch="main" and legacy message.
-		opts := runConfSetOpts{
-			agents:  configureAgents,
-			models:  configureModels,
-			branch:  "main",
-			message: "agent configure: " + configureAgents,
-		}
-		return runConfSet(opts)
-	},
-}
-
 func initAgentCmd() {
 	agentDiscoverCmd.Flags().BoolVarP(&discoverVerbose, "verbose", "v", false, "显示 agent 支持的所有模型及模型来源（自定义 vs. 模型重定义）")
 	agentInstallCmd.Flags().BoolVarP(&installAll, "all", "a", false, "安装全部 CLI agent")
 	agentInstallCmd.Flags().BoolVarP(&installExecute, "execute", "e", true, "直接执行安装命令")
 	agentInstallCmd.Flags().BoolVar(&installForce, "force", false, "强制安装")
 
-	agentConfigureCmd.Flags().StringVar(&configureAgents, "agents", "", "要配置的 agent 名称（逗号分隔），用 all 表示配置所有")
-	agentConfigureCmd.MarkFlagRequired("agents")
-	agentConfigureCmd.Flags().StringVar(&configureModels, "models", "", "覆盖模型映射，格式: agent=模型名，agent2=模型名")
-
-
 	agentCmd.AddCommand(agentDiscoverCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentUninstallCmd)
 	agentCmd.AddCommand(agentUpdateCmd)
-	agentCmd.AddCommand(agentConfigureCmd)
 	initModelsCmds()
 	agentCmd.AddCommand(agentModelsCmd)
 	proxyCmd.AddCommand(proxyModelsCmd)

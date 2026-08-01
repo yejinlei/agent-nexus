@@ -141,7 +141,7 @@ agent-nexus conf set --agents all --models "codex=gpt-5.5"
 3. `--db` — 从 `proxies.db` 交互/非交互选择
 4. 自动检测 — `proxy.Detect()`（CCX Desktop / CC-Switch）
 
-> 旧命令 `agent configure` 和 `conf auto` 仍可用，但已弃用，建议迁移到 `conf set`。
+> 旧命令 `conf auto` 仍可用，但已弃用，建议迁移到 `conf set`。
 
 ## 代理支持
 
