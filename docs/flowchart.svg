@@ -112,9 +112,9 @@
 
     <g transform="translate(20,190)">
       <rect width="240" height="70" rx="8" fill="url(#nexusGrad)" stroke="#fdcb6e" stroke-width="2" filter="url(#glow)"/>
-      <text x="120" y="28" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="13" font-weight="700">$ agent-nexus conf set</text>
-      <text x="120" y="46" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="10">扫描 → 备份 → 配置代理 → 路由</text>
-      <text x="120" y="60" text-anchor="middle" fill="#fdcb6e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">★ 一键完成所有配置 ★</text>
+      <text x="120" y="24" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="12" font-weight="700">$ conf set --agent all --db auto</text>
+      <text x="120" y="42" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="9">DB网关 → 备份 → 添加/映射模型 → 写入</text>
+      <text x="120" y="58" text-anchor="middle" fill="#fdcb6e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">★ 唯一配置入口 ★</text>
     </g>
 
     <g transform="translate(20,280)">

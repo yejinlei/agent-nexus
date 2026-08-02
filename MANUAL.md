@@ -1,4 +1,4 @@
-﻿# agent-nexus 用户使用手册
+# agent-nexus 用户使用手册
 
 ## 功能概览
 
@@ -66,7 +66,7 @@ go build -o agent-nexus.exe
 `--url` 和 `--key` 是全局选项，可用于所有命令，跳过自动检测直接指定代理地址和密钥。`--home` 用于指定用户主目录（默认自动检测）：
 
 ```powershell
-agent-nexus conf set --agents all --url http://127.0.0.1:8080/v1 --key sk-xxx
+agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 agent-nexus proxy detect --url http://proxy:9000/v1 --key abc
 agent-nexus --home /custom/path agent discover
 ```
@@ -84,10 +84,13 @@ agent-nexus pre install
 agent-nexus agent install codex
 agent-nexus agent install claude
 
-# 3. 统一配置所有已安装 agent
-agent-nexus conf set --agents all
+# 3. 嗅探 AI 网关并保存到 DB
+agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
 
-# 4. 验证配置结果
+# 4. 统一配置所有已安装 agent（自动备份 → 添加/映射模型 → 写入配置）
+agent-nexus conf set --agent all --db auto
+
+# 5. 验证配置结果
 agent-nexus agent discover
 agent-nexus agent discover -v   # 显示模型详情
 ```
@@ -119,7 +122,7 @@ agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 
 ### 代理数据库
 
-通过 `proxy db add` 嗅探并保存代理配置到嵌入式 SQLite 数据库，供后续 `conf set --db-id` 复用（详见下方 [proxy db 命令](#proxy-db-命令)）。
+通过 `proxy db add` 嗅探并保存代理配置到嵌入式 SQLite 数据库，供后续 `conf set --db auto` 复用（详见下方 [proxy db 命令](#proxy-db-命令)）。
 
 ### 代理类型汇总
 
@@ -129,7 +132,7 @@ agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
 | CC-Switch | 自动检测 CC-Switch 配置 |
 | 自定义代理 | 通过 `--url` + `--key` 手动指定 |
 | 本地代理 | 通过 `--url` 指定本地运行的代理 |
-| 代理数据库 | `proxy db add` 嗅探保存，`conf set --db-id` 复用 |
+| 代理数据库 | `proxy db add` 嗅探保存，`conf set --db auto` 复用 |
 
 ---
 
@@ -334,32 +337,74 @@ agent-nexus proxy db check --all
 
 ## conf 命令：配置管理
 
-### conf set（推荐入口）
+### conf set（唯一入口）
 
-`agent-nexus conf set` 是统一的配置入口，整合了备份和配置写入，是 `agent configure` 和 `conf auto` 的合并与升级：
+`agent-nexus conf set` 是唯一的配置入口，收紧了所有添加/映射大模型的操作。所有配置必须通过此命令完成：
 
 ```powershell
-agent-nexus conf set --agents all                          # 配置所有已安装 agent
-agent-nexus conf set --agents codex,claude                 # 只配置部分 agent
-agent-nexus conf set --agents all --models "codex=gpt-5.5" # 覆盖模型映射
-agent-nexus conf set --agents all --db-id 1                # 从代理数据库按 ID 选择代理
-agent-nexus conf set --agents all --db                     # 从代理数据库交互/非交互选择
-agent-nexus conf set --agents all --interactive            # 交互式确认模型映射
-agent-nexus conf set --agents all --dry-run                # 预览模式，不实际写入
-agent-nexus conf set --agents all --branch staging -m "msg"  # 指定快照分支和信息
+# 配置所有已安装 agent，自动选取 DB 中 id 最小的 AI 网关记录
+agent-nexus conf set --agent all --db auto
+
+# 只配置部分 agent
+agent-nexus conf set --agent codex,claude --db auto
+
+# 指定 DB 中的网关记录编号
+agent-nexus conf set --agent all --db 2
+
+# 预览模式（不实际写入）
+agent-nexus conf set --agent all --db auto --dry-run
+
+# 不传 --db 则回退到自动检测代理（CCX Desktop / CC-Switch）
+agent-nexus conf set --agent all
+
+# 全局选项 --url + --key 仍可用于跳过 DB 和自动检测
+agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 ```
 
-代理来源优先级（从高到低）：
+#### 参数说明
 
-1. `--url` + `--key` — 直接使用，跳过检测和 DB
-2. `--db-id <n>` — 从 `proxies.db` 按 ID 查找
-3. `--db` — 从 `proxies.db` 交互/非交互选择
+| 参数 | 说明 |
+|------|------|
+| `--agent` / `-a` | 指定 agent（逗号分隔），`all` 代表所有可配置 agent（默认 `all`） |
+| `--db` | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
+| `--dry-run` / `-d` | 预览模式，不实际写入 |
+| `--url` | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测） |
+| `--key` | 全局选项，直接指定代理 API Key |
+
+#### 代理来源优先级（从高到低）
+
+1. `--url` + `--key` — 直接使用，跳过 DB 和自动检测
+2. `--db auto` — 从 `proxies.db` 选取 id 最小的记录
+3. `--db <N>` — 从 `proxies.db` 选取 id=N 的记录
 4. 自动检测 — `proxy.Detect()`（CCX Desktop / CC-Switch）
 
-备份粒度：
+#### 模型添加 vs 映射
 
-- `--agents all` → 全局备份（global）
-- 单个或多个 agent → 逐 agent 备份（per-agent）
+`conf set` 根据 agent 类型自动选择策略：
+
+**自定义模型 agent**（codex/claude/deepseek/opencode/openclaw/openclaude/codebuddy）：
+- 策略：**自动添加**
+- 从 DB 网关记录的 upstream 模型列表中，通过 `PickCustomModel` 算法选取最佳匹配模型
+- 选模算法：精确匹配 → 关键字匹配 → 兜底首个
+- 将选取的模型名直接写入 agent 配置文件
+
+**重定向模型 agent**（kimi/hermes/qoder/trae）：
+- 策略：**映射**
+- 将 agent 原生模型名映射到 upstream 模型
+- 映射算法（4 步）：
+  1. **关键字匹配** — agent 名（如 `kimi`）子串匹配 upstream 模型名
+  2. **默认模型匹配** — 默认模型名关键词在 upstream 中查找
+  3. **多模型轮询** — 多原生模型 agent（如 Kimi K1/K2/Max）尽量分配不同 upstream 模型
+  4. **兜底** — 取首个 upstream 模型
+- 映射结果写入 `proxy_model_mappings` 表持久化
+
+#### 自动备份
+
+配置写入前自动触发全量备份（`createAutoBackup`）：
+- 统一 UUID 关联 DB 与文件系统
+- DB 双写：`backup_snapshots` + `backup_config_entries`
+- 文件系统：`~/.codex/backups/snapshots/<UUID>/`
+- 所有备份可通过 `conf bak` / `conf backup` / `conf history` / `conf rollback` 管理
 
 ### conf backup
 
@@ -427,11 +472,10 @@ agent-nexus conf upstream-models --url http://127.0.0.1:3688/v1 --key sk-xxx
 
 ### conf auto（已弃用，兼容）
 
-`conf set` 的别名，仅通过自动检测（`proxy.Detect`）配置代理，不读取 `--db` / `--db-id`。保留以兼容旧用法：
+`conf set` 的薄别名，仅通过自动检测（`proxy.Detect`）配置代理，不读取 `--db`。保留以兼容旧用法：
 
 ```powershell
 agent-nexus conf auto --agents all
-agent-nexus conf auto --agents codex --models "codex=gpt-5.5"
 agent-nexus conf auto --agents all --dry-run
 ```
 
@@ -446,28 +490,52 @@ agent-nexus conf auto --agents all --dry-run
 
 ---
 
-## 模型路由（三层机制）
+## 模型路由与映射
+
+`conf set` 在配置 agent 时，根据 agent 类型自动选择"添加"或"映射"策略：
 
 ```mermaid
 flowchart LR
-    A["Agent 传入<br/>模型名"] --> B["第一层<br/>CCX Desktop 自动映射"]
-    B --> C["第二层<br/>写入器默认模型"]
-    C --> D["第三层<br/>DeepSeek CLI 直连<br/>（注释保留）"]
-    D --> E["实际后端<br/>sensenova / glm"]
+    A["conf set --agent all --db auto"] --> B["选取 DB 网关记录<br/>获取 upstream 模型列表"]
+    B --> C{"agent 类型?"}
+    C -->|"自定义模型<br/>codex/claude/..."| D["自动添加<br/>PickCustomModel 选最优模型"]
+    C -->|"重定向模型<br/>kimi/hermes/..."| E["映射<br/>ComputeRedirectMappings"]
+    D --> F["写入 agent 配置文件"]
+    E --> G["写入 proxy_model_mappings 表"]
+    F --> H["完成"]
+    G --> H
 ```
 
-**第一层：CCX/Desktop 自动映射** — Agent 传入模型名（如 `gpt-5.5`），代理自动映射到实际后端模型。
+### 自定义模型 agent（自动添加）
 
-**第二层：写入器默认模型** — agent-nexus 写入各 agent 配置文件时使用的默认模型名。具体映射关系可运行 `agent-nexus proxy route` 查看当前路由表。
+适用于 codex、claude、deepseek、opencode、openclaw、openclaude、codebuddy 等 OpenAI Compatible agent。
 
-**第三层：DeepSeek CLI 备选直连** — 配置中保留直连方案（注释形式）。
+**选模算法**（`PickCustomModel`）：
+1. **精确匹配** — upstream 模型名与 agent 默认模型名完全一致
+2. **关键字匹配** — upstream 模型名包含 agent 关键字（如 `codex`、`claude`）
+3. **兜底** — 取 upstream 列表首个模型
+
+### 重定向模型 agent（映射）
+
+适用于 kimi、hermes、qoder、trae 等 ACP agent，它们有固定的原生模型名（如 Kimi 的 K1/K2/Max）。
+
+**映射算法**（`ComputeRedirectMappings`，4 步）：
+
+| 步骤 | 策略 | 说明 |
+|------|------|------|
+| 1 | 关键字匹配 | agent 名（如 `kimi`）子串匹配 upstream 模型名 |
+| 2 | 默认模型匹配 | 默认模型名关键词在 upstream 中查找 |
+| 3 | 多模型轮询 | 多原生模型 agent 尽量分配不同 upstream 模型 |
+| 4 | 兜底 | 取首个 upstream 模型 |
+
+映射结果持久化到 `proxy_model_mappings` 表（`proxy_id` + `agent_name` + `native_model` → `upstream_model`）。
 
 ### 模型来源说明
 
 可配置 agent 的模型来源分为三类：
 
-- **自定义模型**（OpenAI Compatible）：agent 可直接使用上游网关的任何模型名。
-- **需重定向**（ACP）：需代理将上游模型映射为 agent 可识别的名称。
+- **自定义模型**（OpenAI Compatible）：agent 可直接使用上游网关的任何模型名，`conf set` 自动添加最佳匹配。
+- **需重定向**（ACP）：需代理将上游模型映射为 agent 可识别的名称，`conf set` 自动构建映射。
 - **自有模型**（N/A）：agent 内置模型目录，不走外部代理。
 
 > 详细模型信息运行 `agent-nexus agent models` 查看。
@@ -517,24 +585,23 @@ graph TD
 sequenceDiagram
     participant User
     participant Tool as agent-nexus
-    participant Proxy as LLM 代理<br/>(CCX/Desktop 或自定义)
-    participant Backend as 后端模型
+    participant DB as 代理数据库<br/>(proxies.db)
     participant FS as 文件系统/备份
 
-    User->>Tool: agent-nexus conf set --agents all
-    Tool->>Proxy: 检测代理配置（--url/--key/--db-id 或自动嗅探）
-    Proxy-->>Tool: URL / Key / 模型映射表
+    User->>Tool: agent-nexus conf set --agent all --db auto
+    Tool->>DB: 选取 id 最小的 AI 网关记录
+    DB-->>Tool: URL / Key / upstream 模型列表
     Tool->>FS: 扫描已安装的 agent
     FS-->>Tool: agent 列表 + 配置文件路径
-    Tool->>FS: 创建配置快照（versioning.json + snapshots/）
-    FS-->>Tool: 快照 ID
-    Tool->>FS: 备份现有配置
-    FS-->>Tool: 备份完成
-    Tool->>FS: 逐个配置可配置的 agent
+    Tool->>FS: createAutoBackup（DB + 文件系统双写）
+    FS-->>Tool: 备份 UUID
+    Tool->>Tool: 分类 agent（自定义模型 / 重定向模型）
+    Tool->>Tool: 自定义模型 → PickCustomModel 选最优模型
+    Tool->>Tool: 重定向模型 → ComputeRedirectMappings 构建映射
+    Tool->>DB: 写入 proxy_model_mappings 表
+    Tool->>FS: 写入各 agent 配置文件
     FS-->>Tool: 配置结果（成功/跳过）
-    Tool-->>User: 显示配置结果 + 模型路由表
-    User->>Backend: 使用 agent 调用 LLM
-    Backend-->>User: 响应
+    Tool-->>User: 显示配置结果 + 模型映射表
 ```
 
 ---
@@ -605,10 +672,10 @@ kimi --version  # ✅ 正常
 
 ```powershell
 # 配置 claude 使用代理
-agent-nexus conf set --agents claude
+agent-nexus conf set --agent claude --db auto
 
 # 或手动指定代理
-agent-nexus conf set --agents claude --url http://127.0.0.1:3688/v1 --key sk-xxx
+agent-nexus conf set --agent claude --url http://127.0.0.1:3688/v1 --key sk-xxx
 ```
 
 ### npm 安装后命令无法执行："禁止运行脚本"

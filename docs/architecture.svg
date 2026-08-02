@@ -83,7 +83,7 @@
     <g transform="translate(520,55)">
       <rect width="130" height="60" rx="10" fill="#00b894" fill-opacity="0.2" stroke="#55efc4" stroke-width="1"/>
       <text x="65" y="25" text-anchor="middle" fill="#ffffff" font-family="system-ui,sans-serif" font-size="12" font-weight="600">conf</text>
-      <text x="65" y="42" text-anchor="middle" fill="#aaa" font-family="system-ui,sans-serif" font-size="9">配置重写 / 还原</text>
+      <text x="65" y="42" text-anchor="middle" fill="#aaa" font-family="system-ui,sans-serif" font-size="9">模型添加/映射 / 备份</text>
     </g>
   </g>
 

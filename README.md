@@ -20,7 +20,7 @@ agent-nexus 支持 8 个可安装的 agent 运行时，均为 CLI 工具。`agen
 ```
 ① 检查运行时依赖  →  agent-nexus pre check / install
 ② 安装 Agent 运行时 →  agent-nexus agent list / install
-③ 统一配置所有 Agent  →  agent-nexus conf set --agents all
+③ 统一配置所有 Agent  →  agent-nexus conf set --agent all --db auto
 ④ 验证配置        →  agent-nexus agent discover
 ```
 
@@ -32,7 +32,7 @@ agent-nexus 支持 8 个可安装的 agent 运行时，均为 CLI 工具。`agen
 |------|------|------|
 | ① 检查运行时依赖 | node/npm、python/pip、git | `agent-nexus pre check` |
 | ② 安装 Agent 运行时 | codex/claude/kimi 等 8 个 agent | `agent-nexus agent install codex` |
-| ③ 统一配置 | 检测代理 → 备份 → 写入配置 | `agent-nexus conf set --agents all` |
+| ③ 统一配置 | 选取 DB 网关 → 备份 → 添加/映射模型 → 写入配置 | `agent-nexus conf set --agent all --db auto` |
 | ④ 验证 | 扫描 + 显示配置状态 | `agent-nexus agent discover` |
 
 ## 快速开始
@@ -47,10 +47,13 @@ agent-nexus agent list
 agent-nexus agent install codex
 agent-nexus agent install claude
 
-# 3. 统一配置所有已安装的 agent（先备份，再写入代理配置）
-agent-nexus conf set --agents all
+# 3. 嗅探 AI 网关并保存到 DB
+agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
 
-# 4. 验证
+# 4. 统一配置所有已安装的 agent（自动备份 → 添加/映射模型 → 写入配置）
+agent-nexus conf set --agent all --db auto
+
+# 5. 验证
 agent-nexus agent discover
 agent-nexus agent discover -v   # 显示每个 agent 的模型支持详情
 ```
@@ -111,43 +114,58 @@ agent-nexus agent update codex
 
 ## 统一配置入口：`conf set`
 
-`agent-nexus conf set` 是推荐的统一配置入口，整合了备份和配置写入：
+`agent-nexus conf set` 是唯一的配置入口，收紧了所有添加/映射大模型的操作：
 
 ```powershell
-# 配置所有已安装 agent（推荐）
-agent-nexus conf set --agents all
+# 配置所有已安装 agent，自动选取 DB 中 id 最小的 AI 网关记录
+agent-nexus conf set --agent all --db auto
 
 # 只配置部分 agent
-agent-nexus conf set --agents codex,claude
+agent-nexus conf set --agent codex,claude --db auto
 
-# 从代理数据库选择代理
-agent-nexus conf set --agents all --db-id 1
-
-# 交互式确认模型映射
-agent-nexus conf set --agents all --interactive
+# 指定 DB 中的网关记录编号
+agent-nexus conf set --agent all --db 2
 
 # 预览模式（不实际写入）
-agent-nexus conf set --agents all --dry-run
+agent-nexus conf set --agent all --db auto --dry-run
 
-# 覆盖模型映射
-agent-nexus conf set --agents all --models "codex=gpt-5.5"
+# 不传 --db 则回退到自动检测代理（CCX Desktop / CC-Switch）
+agent-nexus conf set --agent all
 ```
 
-代理来源优先级（从高到低）：
+### 参数说明
 
-1. `--url` + `--key` — 直接使用，跳过检测和 DB
-2. `--db-id <n>` — 从 `proxies.db` 按 ID 查找
-3. `--db` — 从 `proxies.db` 交互/非交互选择
-4. 自动检测 — `proxy.Detect()`（CCX Desktop / CC-Switch）
+| 参数 | 说明 |
+|------|------|
+| `--agent` | 指定 agent（逗号分隔），`all` 代表所有可配置 agent |
+| `--db` | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
+| `--dry-run` | 预览模式，不实际写入 |
 
-> 旧命令 `conf auto` 仍可用，但已弃用，建议迁移到 `conf set`。
+### 模型添加 vs 映射
+
+`conf set` 根据 agent 类型自动选择策略：
+
+| Agent 类型 | 策略 | 说明 |
+|-----------|------|------|
+| **自定义模型**（codex/claude/deepseek/opencode/...） | **自动添加** | 从 DB 网关记录的 upstream 模型列表中选取最佳匹配模型，写入 agent 配置 |
+| **重定向模型**（kimi/hermes/qoder/trae） | **映射** | 将 agent 原生模型名映射到 upstream 模型，写入 `proxy_model_mappings` 表 |
+
+映射算法（4 步）：
+1. **关键字匹配** — agent 名（如 kimi）子串匹配 upstream 模型名
+2. **默认模型匹配** — 默认模型名关键词在 upstream 中查找
+3. **多模型轮询** — 多原生模型 agent 尽量分配不同 upstream 模型
+4. **兜底** — 取首个 upstream 模型
+
+### 自动备份
+
+配置写入前自动触发全量备份（DB + 文件系统双写），可通过 `conf bak` 管理所有备份。
 
 ## 代理支持
 
 - **CCX Desktop**（自动检测）：读取 `~\AppData\Roaming\ccx-desktop\.config\config.json` 和 `.env`，默认监听 `127.0.0.1:3688`
 - **CC-Switch**（自动检测）：读取 `~\AppData\Roaming\cc-switch\.config\config.json` 和 `.env`
 - **自定义代理**（手动）：通过 `--url` + `--key` 指定任意代理地址
-- **代理数据库**：通过 `proxy db add` 嗅探并保存代理配置，供 `conf set --db-id` 复用
+- **代理数据库**：通过 `proxy db add` 嗅探并保存代理配置，供 `conf set --db auto` 复用
 
 ## 配置版本化管理
 
