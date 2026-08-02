@@ -73,7 +73,7 @@ agent-nexus [command]
 
 详细用法见 [MANUAL.md](MANUAL.md)。
 
-## 支持的 Agent（11 个可安装运行时）
+## 支持的 Agent（8 个可安装运行时）
 
 | Agent | 类型 | 协议 | 安装方式 | 说明 |
 |-------|------|------|----------|------|
@@ -83,10 +83,7 @@ agent-nexus [command]
 | opencode | CLI | OpenAI Compatible | npm `opencode-ai` | 任意上游模型 |
 | openclaw | CLI | OpenAI Compatible | 官方安装脚本 | 任意上游模型 |
 | openclaude | CLI | OpenAI Compatible | npm `@gitlawb/openclaude` | .env 格式配置 |
-| cursor | IDE | OpenAI Compatible | 官方下载页 | VS Code 派生 IDE |
 | hermes | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
-| kiro | CLI | ACP | 无内置安装器 | 需代理路由映射 |
-| grok | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
 | gemini | CLI | 无 | npm `@google/gemini-cli` | Google auth（OAuth/API key） |
 
 ## 安装 Agent 运行时

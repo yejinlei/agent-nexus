@@ -1,4 +1,4 @@
-# agent-nexus 用户使用手册
+﻿# agent-nexus 用户使用手册
 
 ## 功能概览
 
@@ -17,9 +17,9 @@
 
 ## 支持的 Agent
 
-agent-nexus 围绕 10 个可安装的 agent 运行时构建（`agent list` 返回的权威列表，也是 `agent discover` 和 `agent models` 的扫描范围）。
+agent-nexus 围绕 8 个可安装的 agent 运行时构建（`agent list` 返回的权威列表，也是 `agent discover` 和 `agent models` 的扫描范围）。
 
-### 可配置（通过代理转发）— 8 个
+### 可配置（通过代理转发）— 7 个
 
 | Agent | 类型 | 协议 | 说明 |
 |-------|------|------|------|
@@ -30,13 +30,11 @@ agent-nexus 围绕 10 个可安装的 agent 运行时构建（`agent list` 返�
 | openclaw | CLI | OpenAI Compatible | 任意上游模型 |
 | openclaude | CLI | OpenAI Compatible | .env 格式配置 |
 | hermes | CLI | ACP | 需代理路由映射 |
-| kiro | CLI | ACP | 需代理路由映射 |
 
-### 不可配置（无外部模型配置字段）— 2 个
+### 不可配置（无外部模型配置字段）— 1 个
 
 | Agent | 类型 | 说明 |
 |-------|------|------|
-| grok | CLI | 通过代理路由映射，但无独立模型配置入口 |
 | gemini | CLI | Google Gemini CLI，Google auth（OAuth/API key） |
 
 > 以下 agent 可在本机被发现（`agent discover` 仍会识别），但不在可安装运行时列表中，因此不参与 `agent models` 等命令：
@@ -597,7 +595,7 @@ kimi
 kimi --version  # ✅ 正常
 ```
 
-**原因**：Kimi、Hermes、Grok 等通过官方安装脚本安装的 agent，会创建新的安装目录并写入注册表 PATH。而 Codex、Claude、Opencode、Openclaw 等通过 npm 安装的 agent，注册的是 npm 目录下的 `.ps1` 脚本代理——npm 目录在 Node.js 安装时就已在 PATH 中，因此不需要重开终端。
+**原因**：Kimi、Hermes 等通过官方安装脚本安装的 agent，会创建新的安装目录并写入注册表 PATH。而 Codex、Claude、Opencode、Openclaw 等通过 npm 安装的 agent，注册的是 npm 目录下的 `.ps1` 脚本代理——npm 目录在 Node.js 安装时就已在 PATH 中，因此不需要重开终端。
 
 **解决**：安装完成提示 `open a new terminal for it to take effect` 时，**重新打开 PowerShell** 即可。
 

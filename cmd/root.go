@@ -42,7 +42,7 @@ var rootCmd = &cobra.Command{
 
 支持的 agent:
   CLI:  codex, claude, kimi, deepseek, opencode, openclaw,
-        codebuddy, hermes, kiro, grok, qoder, trae, pi
+        codebuddy, hermes, qoder, trae, pi
   IDE:  cursor (via openai-compatible provider)
   不可配置: antigravity, copilot, Deveco, qoder-ide, trae-ide,
             codebuddy-ide, windsurf, zed

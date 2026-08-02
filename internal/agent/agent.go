@@ -33,8 +33,6 @@ func NewWriterRegistry() *WriterRegistry {
 			newOpenClawWriter(),
 			newCodeBuddyWriter(),
 			newHermesWriter(),
-			newKiroWriter(),
-			newGrokWriter(),
 			newQoderWriter(),
 			newTraeWriter(),
 

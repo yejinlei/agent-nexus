@@ -425,7 +425,7 @@ func TestWriterRegistry_AllWritersPresent(t *testing.T) {
 
 	expectedNames := []string{
 		"codex", "claude", "kimi", "deepseek", "opencode", "openclaw",
-		"codebuddy", "hermes", "kiro", "grok", "qoder",
+		"codebuddy", "hermes", "qoder",
 		"trae", "pi", "openclaude",
 	}
 

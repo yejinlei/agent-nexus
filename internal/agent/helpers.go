@@ -29,8 +29,6 @@ var defaultSourceAndNotes = map[string]struct {
 	"openclaude": {"default", "上游不支持，使用默认模型（需代理重定向）"},
 	"codebuddy": {"proxy-map", "上游不支持，走代理重定向"},
 	"hermes":    {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"kiro":      {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"grok":      {"default", "上游不支持，使用默认模型（需代理重定向）"},
 	"qoder":     {"default", "上游不支持，使用默认模型（需代理重定向）"},
 	"trae":      {"default", "上游不支持，使用默认模型（需代理重定向）"},
 }

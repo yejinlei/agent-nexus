@@ -12,7 +12,7 @@ import (
 
 func TestWriterRegistry_Get(t *testing.T) {
 	reg := NewWriterRegistry()
-	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "hermes", "kiro", "grok", "openclaude"} {
+	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "hermes", "openclaude"} {
 		w := reg.Get(expected)
 		if w == nil {
 			t.Errorf("registry missing writer for %s", expected)
@@ -149,8 +149,6 @@ func TestKimiWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "kimi") 
 func TestOpenCodeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "opencode") }
 func TestOpenClawWriter(t *testing.T) { testWriterConfigureAndStatus(t, "openclaw") }
 func TestHermesWriter(t *testing.T)   { testWriterConfigureAndStatus(t, "hermes") }
-func TestKiroWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "kiro") }
-func TestGrokWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "grok") }
 
 // ---- Individual writer content tests ----
 

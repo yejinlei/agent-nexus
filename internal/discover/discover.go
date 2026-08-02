@@ -54,8 +54,6 @@ var modelSourceMap = map[string]ModelSource{
 	// ACP: needs model redirect (proxy maps upstream → native model name)
 	"kimi":   ModelSourceRedirect,
 	"hermes": ModelSourceRedirect,
-	"kiro":   ModelSourceRedirect,
-	"grok":   ModelSourceRedirect,
 	"qoder":  ModelSourceRedirect,
 	"trae":   ModelSourceRedirect,
 	// Own backend / non-configurable
@@ -86,8 +84,6 @@ var nativeModelsMap = map[string]string{
 	"clawx":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
 	"kimi":          "Kimi K1, Kimi K2, Kimi-Max (通过代理路由到上游模型)",
 	"hermes":        "Hermes 2, Hermes 3 (通过代理路由到上游模型)",
-	"kiro":          "Kiro 原生模型 (通过代理路由到上游模型)",
-	"grok":          "Grok 2, Grok 3 (通过代理路由到上游模型)",
 	"qoder":         "Qoder 原生模型 (通过代理路由到上游模型)",
 	"trae":          "Trae-Plus, Trae-Code (通过代理路由到上游模型)",
 	"antigravity":   "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (Google Gemini)",

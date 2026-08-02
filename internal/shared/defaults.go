@@ -17,8 +17,6 @@ var DefaultModels = map[string]string{
 	"openclaw":   "sensenova-6.7-flash-lite",
 	"openclaude": "sensenova-6.7-flash-lite",
 	"hermes":     "sensenova-6.7-flash-lite",
-	"kiro":       "sensenova-6.7-flash-lite",
-	"grok":       "sensenova-6.7-flash-lite",
 }
 
 // GetDefaultModel returns the canonical default model name for the given

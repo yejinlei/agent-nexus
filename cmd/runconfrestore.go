@@ -288,7 +288,7 @@ func extractAgentName(path string) string {
     base := filepath.Base(path)
     ext := filepath.Ext(base)
     name := strings.TrimSuffix(base, ext)
-    for _, known := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "cursor", "hermes", "kiro", "grok", "gemini", "openclaude"} {
+    for _, known := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "cursor", "hermes", "gemini", "openclaude"} {
         if strings.Contains(strings.ToLower(name), known) {
             return known
         }
