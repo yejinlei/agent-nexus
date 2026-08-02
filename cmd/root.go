@@ -292,6 +292,9 @@ var agentInstallCmd = &cobra.Command{
 				if err := executeNpmCommand(fmt.Sprintf("install -g %s", a.NpmPackage), installForce); err != nil {
 					return fmt.Errorf("安装失败: %v", err)
 				}
+				if err := verifyInstalled(name); err != nil {
+					return fmt.Errorf("安装完成但后验证失败: %v", err)
+				}
 				fmt.Println("✅ 安装完成")
 				// On Windows, npm packages register .ps1 proxy scripts that require
 				// PowerShell execution policy to allow running scripts.
@@ -304,6 +307,9 @@ var agentInstallCmd = &cobra.Command{
 			} else if isPip {
 				if err := executePipCommand(fmt.Sprintf("install %s", a.PipPackage)); err != nil {
 					return fmt.Errorf("安装失败: %v", err)
+				}
+				if err := verifyInstalled(name); err != nil {
+					return fmt.Errorf("安装完成但后验证失败: %v", err)
 				}
 				fmt.Println("✅ 安装完成")
 			} else if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
@@ -323,6 +329,9 @@ var agentInstallCmd = &cobra.Command{
 				if err := executeRemoteScript(cmdStr); err != nil {
 					return fmt.Errorf("安装失败: %v", err)
 				}
+				if err := verifyInstalled(name); err != nil {
+					return fmt.Errorf("安装脚本返回成功但后验证失败: %v", err)
+				}
 				fmt.Println("✅ 安装完成")
 			} else {
 				if strings.HasPrefix(cmdStr, "http://") || strings.HasPrefix(cmdStr, "https://") {
@@ -335,6 +344,9 @@ var agentInstallCmd = &cobra.Command{
 						return fmt.Errorf("安装失败: %v", err)
 					}
 				}
+				if err := verifyInstalled(name); err != nil {
+					return fmt.Errorf("安装命令返回成功但后验证失败: %v", err)
+				}
 				fmt.Println("✅ 安装完成")
 
 				home, _ := os.UserHomeDir()
@@ -346,7 +358,11 @@ var agentInstallCmd = &cobra.Command{
 					filepath.Join(home, ".local", "bin", name+".exe"),
 					filepath.Join(home, ".local", "bin", name),
 					filepath.Join(home, "AppData", "Local", name, "bin", name+".exe"),
+					filepath.Join(home, "AppData", "Local", name, "bin", name),
+					filepath.Join(home, "AppData", "Local", name, name+".exe"),
+					filepath.Join(home, "AppData", "Local", name, name+"-agent", "venv", "Scripts", name+".exe"),
 					filepath.Join(home, "AppData", "Local", name+"-code", "bin", name+".exe"),
+					filepath.Join(home, "AppData", "Local", name+"-code", "bin", name),
 				}
 				found := false
 				for _, bp := range binPaths {
@@ -369,8 +385,8 @@ var agentInstallCmd = &cobra.Command{
 					}
 				}
 				if !found {
-					fmt.Printf("\n未找到已安装的二进制文件，请检查安装日志或手动查找\n")
-					fmt.Printf("常见位置: ~/.%s-code/bin/ 或 ~/.%s/bin/\n", name, name)
+					fmt.Printf("\n⚠ 未找到已安装的二进制文件，请检查安装日志或手动查找\n")
+					fmt.Printf("常见位置: ~/.%s-code/bin/、~/.%s/bin/ 或 AppData\\Local\\%s\\*\n", name, name, name)
 				}
 			}
 			fmt.Printf("\n安装完成后运行: agent-nexus agent discover 确认安装成功\n")
@@ -1211,6 +1227,16 @@ func init() {
 }
 
 // ========== UTILITY FUNCTIONS ==========
+
+func verifyInstalled(name string) error {
+	discovered := discover.Discover()
+	for _, d := range discovered {
+		if d.Name == name && d.HasConfig {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s 未检测到安装", name)
+}
 
 func installAllRuntimes() error {
 	// Collect set of already-installed agent names from discovery

@@ -59,12 +59,12 @@ var registry = []Agent{
 		UninstallPaths: []string{".kimi-code", ".kimi"},
 		Download: map[string]string{
 			PlatformWindows: "https://code.kimi.com/kimi-code/install.ps1",
-			PlatformDarwin: "https://code.kimi.com/kimi-code/install.sh",
-			PlatformLinux: "https://code.kimi.com/kimi-code/install.sh",
+			PlatformDarwin:  "https://code.kimi.com/kimi-code/install.sh",
+			PlatformLinux:   "https://code.kimi.com/kimi-code/install.sh",
 		},
-		Protocol:       "acp",
+		Protocol:      "acp",
 		InstallScript: true,
-		Notes:          "Kimi Code CLI - official installer; config at ~/.kimi-code/config.toml",
+		Notes:         "Kimi Code CLI - official installer; config at ~/.kimi-code/config.toml",
 	},
 	{
 		Name:           "opencode",
@@ -84,12 +84,12 @@ var registry = []Agent{
 		UninstallPaths: []string{".openclaw"},
 		Download: map[string]string{
 			PlatformWindows: "https://openclaw.ai/install.ps1",
-			PlatformDarwin: "https://openclaw.ai/install.sh",
-			PlatformLinux: "https://openclaw.ai/install.sh",
+			PlatformDarwin:  "https://openclaw.ai/install.sh",
+			PlatformLinux:   "https://openclaw.ai/install.sh",
 		},
-		Protocol:       "openai",
+		Protocol:      "openai",
 		InstallScript: true,
-		Notes:          "OpenClaw CLI - official installer via openclaw.ai",
+		Notes:         "OpenClaw CLI - official installer via openclaw.ai",
 	},
 	{
 		Name:           "openclaude",
@@ -107,22 +107,22 @@ var registry = []Agent{
 		Category:       "cli",
 		NpmPackage:     "",
 		LegacyBinPaths: []string{".local/bin/hermes.exe"},
-		UninstallPaths: []string{".hermes"},
+		UninstallPaths: []string{"AppData/Local/hermes"},
 		Download: map[string]string{
 			PlatformWindows: "https://hermes-agent.nousresearch.com/install.ps1",
-			PlatformDarwin: "https://hermes-agent.nousresearch.com/install.sh",
-			PlatformLinux: "https://hermes-agent.nousresearch.com/install.sh",
+			PlatformDarwin:  "https://hermes-agent.nousresearch.com/install.sh",
+			PlatformLinux:   "https://hermes-agent.nousresearch.com/install.sh",
 		},
-		Protocol:       "acp",
+		Protocol:      "acp",
 		InstallScript: true,
-		Notes:          "Hermes Agent CLI - official installer script",
+		Notes:         "Hermes Agent CLI - official installer script",
 	},
 	{
 		Name:           "kiro",
 		Display:        "Kiro CLI",
 		Category:       "cli",
 		NpmPackage:     "",
-		UninstallPaths: []string{".kiro"},
+		UninstallPaths: []string{".kiro", "AppData/Local/kiro"},
 		Download:       map[string]string{},
 		Protocol:       "acp",
 		Notes:          "Kiro CLI - download placeholder; repo/release URL to be confirmed",
@@ -132,15 +132,15 @@ var registry = []Agent{
 		Display:        "Grok",
 		Category:       "cli",
 		NpmPackage:     "",
-		UninstallPaths: []string{".grok"},
+		UninstallPaths: []string{".grok", "AppData/Local/grok"},
 		Download: map[string]string{
 			PlatformWindows: "https://x.ai/cli/install.ps1",
-			PlatformDarwin: "https://x.ai/cli/install.sh",
-			PlatformLinux: "https://x.ai/cli/install.sh",
+			PlatformDarwin:  "https://x.ai/cli/install.sh",
+			PlatformLinux:   "https://x.ai/cli/install.sh",
 		},
-		Protocol:       "acp",
+		Protocol:      "acp",
 		InstallScript: true,
-		Notes:          "Grok CLI - official installer via x.ai (powershell -File on Windows, install.sh on Unix)",
+		Notes:         "Grok CLI - official installer via x.ai (powershell -File on Windows, install.sh on Unix)",
 	},
 	{
 		Name:           "gemini",
@@ -153,6 +153,7 @@ var registry = []Agent{
 		Notes:          "Google Gemini CLI - npm package, Google auth (OAuth/API key)",
 	},
 }
+
 // CurrentPlatform returns
 // CurrentPlatform returns the normalized platform string
 func CurrentPlatform() string {
