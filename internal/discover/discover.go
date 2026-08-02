@@ -269,8 +269,8 @@ var registry = AgentRegistry{
 		{Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Claude/settings.json"}, HomeDirFiles: []string{".claude/settings.json"}, BinaryName: "claude", IsConfigurable: true},
 		{Name: "kimi", Category: "cli", Protocol: ProtocolACP, ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi-code/config.toml", ".kimi/config.toml"}, BinaryName: "kimi", IsConfigurable: true},
 		{Name: "deepseek", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
-		{Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, IsConfigurable: true},
-		{Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, IsConfigurable: true},
+		{Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, BinaryName: "opencode", IsConfigurable: true},
+		{Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, BinaryName: "openclaw", IsConfigurable: true},
 		{Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
 		{Name: "cursor", Category: "ide", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Cursor/User/settings.json"}, IsConfigurable: true},
 		{Name: "codebuddy", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
@@ -290,7 +290,7 @@ var registry = AgentRegistry{
 		{Name: "zed", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Zed/settings.json"}, IsConfigurable: false, Notes: "No built-in AI Agent"},
 		{Name: "lmstudio", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"LM Studio/settings.json"}, IsConfigurable: true},
 		{Name: "clawx", Category: "ide", Protocol: ProtocolOpenAI, HomeDirFiles: []string{"AppData/Roaming/clawx/clawx-providers.json"}, IsConfigurable: true},
-		{Name: "gemini", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".gemini/config.json"}, IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
+		{Name: "gemini", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".gemini/config.json"}, BinaryName: "gemini", IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
 	},
 }
 
