@@ -4,16 +4,16 @@
 
 agent-nexus 是 coding agent 配置领域的 `/etc/hosts`：一条命令，把散落在本机各处的 LLM endpoint 和 API Key 统一重定向到一个 AI 消息网关。
 
-agent-nexus 支持 11 个可安装的 agent 运行时，覆盖 CLI 和 IDE 两大类。`agent list` 是权威列表。
+agent-nexus 支持 8 个可安装的 agent 运行时，均为 CLI 工具。`agent list` 是权威列表。
 
 ## 架构
 
 ![agent-nexus 架构](docs/architecture.svg)
 
 - **AI 消息网关（proxy）**：统一上游端点，负责模型路由、计费、限流。
-- **Agent 运行时**：你日常使用的 coding 工具（codex, claude, kimi, cursor 等），各有配置格式，但本质上都是"调一个 LLM endpoint"。
+- **Agent 运行时**：你日常使用的 coding 工具（codex, claude, kimi, hermes 等），各有配置格式，但本质上都是"调一个 LLM endpoint"。
 - **agent-nexus**：中间件 / 配置中枢。扫描本机 agent → 检测代理 → 自动备份 → 写入配置 → 建立模型路由。
-- **下游协作平台**（Multica、Cursor 等）：直接复用已配置好的 agent，无需各自重复配置代理和 Key。
+- **下游协作平台**（Multica 等）：直接复用已配置好的 agent，无需各自重复配置代理和 Key。
 
 ## 工作流
 
@@ -24,12 +24,14 @@ agent-nexus 支持 11 个可安装的 agent 运行时，覆盖 CLI 和 IDE 两�
 ④ 验证配置        →  agent-nexus agent discover
 ```
 
+![agent-nexus 工作流全景](docs/flowchart.svg)
+
 完整自动化链路（详见 [MANUAL.md](MANUAL.md)）：
 
 | 阶段 | 动作 | 命令 |
 |------|------|------|
 | ① 检查运行时依赖 | node/npm、python/pip、git | `agent-nexus pre check` |
-| ② 安装 Agent 运行时 | codex/claude/kimi 等 11 个 agent | `agent-nexus agent install codex` |
+| ② 安装 Agent 运行时 | codex/claude/kimi 等 8 个 agent | `agent-nexus agent install codex` |
 | ③ 统一配置 | 检测代理 → 备份 → 写入配置 | `agent-nexus conf set --agents all` |
 | ④ 验证 | 扫描 + 显示配置状态 | `agent-nexus agent discover` |
 
