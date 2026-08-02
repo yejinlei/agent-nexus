@@ -16,7 +16,6 @@ var DefaultModels = map[string]string{
 	"opencode":   "myccx/glm-5.2",
 	"openclaw":   "sensenova-6.7-flash-lite",
 	"openclaude": "sensenova-6.7-flash-lite",
-	"cursor":     "sensenova-6.7-flash-lite",
 	"hermes":     "sensenova-6.7-flash-lite",
 	"kiro":       "sensenova-6.7-flash-lite",
 	"grok":       "sensenova-6.7-flash-lite",

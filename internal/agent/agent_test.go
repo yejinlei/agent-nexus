@@ -1,18 +1,18 @@
 package agent
 
 import (
+	"agent-nexus/internal/proxy"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
-	"agent-nexus/internal/proxy"
 )
 
 // ---- WriterRegistry tests ----
 
 func TestWriterRegistry_Get(t *testing.T) {
 	reg := NewWriterRegistry()
-	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "cursor", "hermes", "kiro", "grok", "openclaude"} {
+	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "hermes", "kiro", "grok", "openclaude"} {
 		w := reg.Get(expected)
 		if w == nil {
 			t.Errorf("registry missing writer for %s", expected)
@@ -64,13 +64,6 @@ func TestWriterRegistry_AllCanConfigure(t *testing.T) {
 
 func TestWriterRegistry_Category(t *testing.T) {
 	reg := NewWriterRegistry()
-	cursorWriter := reg.Get("cursor")
-	if cursorWriter == nil {
-		t.Fatal("cursor writer not found")
-	}
-	if cursorWriter.Category() != "ide" {
-		t.Errorf("cursor category = %q, want ide", cursorWriter.Category())
-	}
 
 	codexWriter := reg.Get("codex")
 	if codexWriter == nil {
@@ -94,7 +87,7 @@ func testWriterConfigureAndStatus(t *testing.T, writerName string) {
 	cfgPath := filepath.Join(tmpDir, writerName+".toml")
 
 	// Writers that read existing files need a pre-existing config.
-	needsJSON := writerName == "claude" || writerName == "cursor" || writerName == "opencode" ||
+	needsJSON := writerName == "claude" || writerName == "opencode" ||
 		writerName == "openclaw"
 	needsTOML := writerName == "codex"
 
@@ -113,7 +106,7 @@ func testWriterConfigureAndStatus(t *testing.T, writerName string) {
 		}
 	} else if needsTOML {
 		// codex reads existing TOML and modifies it
-os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
+		os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 	}
 
 	p := &proxy.Proxy{
@@ -150,15 +143,14 @@ os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 	}
 }
 
-func TestCodexWriter(t *testing.T) { testWriterConfigureAndStatus(t, "codex") }
-func TestClaudeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "claude") }
-func TestKimiWriter(t *testing.T) { testWriterConfigureAndStatus(t, "kimi") }
+func TestCodexWriter(t *testing.T)    { testWriterConfigureAndStatus(t, "codex") }
+func TestClaudeWriter(t *testing.T)   { testWriterConfigureAndStatus(t, "claude") }
+func TestKimiWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "kimi") }
 func TestOpenCodeWriter(t *testing.T) { testWriterConfigureAndStatus(t, "opencode") }
 func TestOpenClawWriter(t *testing.T) { testWriterConfigureAndStatus(t, "openclaw") }
-func TestCursorWriter(t *testing.T) { testWriterConfigureAndStatus(t, "cursor") }
-func TestHermesWriter(t *testing.T) { testWriterConfigureAndStatus(t, "hermes") }
-func TestKiroWriter(t *testing.T) { testWriterConfigureAndStatus(t, "kiro") }
-func TestGrokWriter(t *testing.T) { testWriterConfigureAndStatus(t, "grok") }
+func TestHermesWriter(t *testing.T)   { testWriterConfigureAndStatus(t, "hermes") }
+func TestKiroWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "kiro") }
+func TestGrokWriter(t *testing.T)     { testWriterConfigureAndStatus(t, "grok") }
 
 // ---- Individual writer content tests ----
 
@@ -216,30 +208,6 @@ func TestClaudeWriter_Content(t *testing.T) {
 	}
 	if cfg["model"] != "fable" {
 		t.Errorf("model = %v, want fable", cfg["model"])
-	}
-}
-
-func TestCursorWriter_Content(t *testing.T) {
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "settings.json")
-	os.WriteFile(cfgPath, []byte("{}"), 0644)
-
-	w := NewWriterRegistry().Get("cursor")
-	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
-
-	if err := w.Configure(cfgPath, p, ""); err != nil {
-		t.Fatalf("Configure error = %v", err)
-	}
-	data, _ := os.ReadFile(cfgPath)
-	var cfg map[string]interface{}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("failed to parse output: %v", err)
-	}
-	if cfg["cursor.ai.chat.provider"] != "openai-compatible" {
-		t.Errorf("provider = %v, want openai-compatible", cfg["cursor.ai.chat.provider"])
-	}
-	if cfg["cursor.ai.chat.model"] != "sensenova-6.7-flash-lite" {
-		t.Errorf("model = %v, want sensenova-6.7-flash-lite", cfg["cursor.ai.chat.model"])
 	}
 }
 

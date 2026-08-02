@@ -102,21 +102,6 @@ var registry = []Agent{
 		Notes:          "OpenClaude CLI - npm install, openai-compatible provider",
 	},
 	{
-		Name:           "cursor",
-		Display:        "Cursor (IDE)",
-		Category:       "ide",
-		NpmPackage:     "",
-		UninstallPaths: []string{},
-		Download: map[string]string{
-			PlatformWindows: "https://cursor.com/install?win32=true",
-			PlatformDarwin: "https://cursor.com/install?osx=true",
-			PlatformLinux: "https://cursor.com/install?linux=true",
-		},
-		Protocol:       "openai",
-		InstallScript:  true,
-		Notes:          "Cursor IDE - openai-compatible provider in settings.json",
-	},
-	{
 		Name:           "hermes",
 		Display:        "Hermes CLI",
 		Category:       "cli",

@@ -17,9 +17,9 @@
 
 ## 支持的 Agent
 
-agent-nexus 围绕 11 个可安装的 agent 运行时构建（`agent list` 返回的权威列表，也是 `agent discover` 和 `agent models` 的扫描范围）。
+agent-nexus 围绕 10 个可安装的 agent 运行时构建（`agent list` 返回的权威列表，也是 `agent discover` 和 `agent models` 的扫描范围）。
 
-### 可配置（通过代理转发）— 9 个
+### 可配置（通过代理转发）— 8 个
 
 | Agent | 类型 | 协议 | 说明 |
 |-------|------|------|------|
@@ -29,7 +29,6 @@ agent-nexus 围绕 11 个可安装的 agent 运行时构建（`agent list` 返�
 | opencode | CLI | OpenAI Compatible | 任意上游模型 |
 | openclaw | CLI | OpenAI Compatible | 任意上游模型 |
 | openclaude | CLI | OpenAI Compatible | .env 格式配置 |
-| cursor | IDE | OpenAI Compatible | VS Code 派生 |
 | hermes | CLI | ACP | 需代理路由映射 |
 | kiro | CLI | ACP | 需代理路由映射 |
 

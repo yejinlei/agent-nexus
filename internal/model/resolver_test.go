@@ -102,8 +102,8 @@ func TestResolveAllModels_BuildRoutingTable(t *testing.T) {
         },
     }
     table := BuildRoutingTable(p)
-    if len(table) < 13 {
-        t.Fatalf("expected at least 13 routing entries, got %d", len(table))
+    if len(table) < 11 {
+        t.Fatalf("expected at least 11 routing entries, got %d", len(table))
     }
 
     proxyCount := 0

@@ -24,15 +24,13 @@ type WriterRegistry struct {
 func NewWriterRegistry() *WriterRegistry {
 	return &WriterRegistry{
 		writers: []ConfigWriter{
-			// 原有可配置 Agent
+			// 可配置 Agent
 			newCodexWriter(),
 			newClaudeWriter(),
 			newKimiWriter(),
 			newDeepSeekWriter(),
 			newOpenCodeWriter(),
 			newOpenClawWriter(),
-			newCursorWriter(),
-			// 新增可配置 Agent
 			newCodeBuddyWriter(),
 			newHermesWriter(),
 			newKiroWriter(),
@@ -43,8 +41,7 @@ func NewWriterRegistry() *WriterRegistry {
 			// Pi (JSON-based config)
 			newPiWriter(),
 
-			// OpenClaude (TOML-based config, similar to Codex)
-			// Note: newOpenClaudeWriter() is imported from openclaude.go
+			// OpenClaude (TOML-based config)
 			newOpenClaudeWriter(),
 		},
 	}

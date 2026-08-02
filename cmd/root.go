@@ -276,7 +276,7 @@ var agentInstallCmd = &cobra.Command{
 		if !installForce {
 			discovered := discover.Discover()
 			for _, d := range discovered {
-				if d.Name == name {
+				if d.Name == name && d.HasConfig {
 					fmt.Printf("✅ %s 已安装，跳过\n\n安装后确认: agent-nexus agent discover 查看配置状态\n", d.Name)
 					return nil
 				}
@@ -1217,7 +1217,9 @@ func installAllRuntimes() error {
 	discovered := discover.Discover()
 	installedSet := make(map[string]bool)
 	for _, a := range discovered {
-		installedSet[a.Name] = true
+		if a.HasConfig {
+			installedSet[a.Name] = true
+		}
 	}
 
 	agents := install.AllRuntimes()

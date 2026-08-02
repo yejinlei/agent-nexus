@@ -81,9 +81,11 @@ func (w *kimiWriter) Configure(path string, p *proxy.Proxy, model string) error 
 	case strings.Contains(path, ".kimi/config"):
 		secondaryPath = filepath.Join(home, ".kimi-code", "config.toml")
 	default:
-		_ = os.WriteFile(filepath.Join(home, ".kimi-code", "config.toml"), []byte(content), 0644)
-		return os.WriteFile(filepath.Join(home, ".kimi", "config.toml"), []byte(content), 0644)
+		_ = os.MkdirAll(filepath.Join(home, ".kimi-code"), 0755)
+		_ = os.MkdirAll(filepath.Join(home, ".kimi"), 0755)
+		return os.WriteFile(filepath.Join(home, ".kimi-code", "config.toml"), []byte(content), 0644)
 	}
+	_ = os.MkdirAll(filepath.Dir(secondaryPath), 0755)
 
 	return os.WriteFile(secondaryPath, []byte(content), 0644)
 }

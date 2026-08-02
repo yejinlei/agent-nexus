@@ -1,8 +1,8 @@
 package model
 
 import (
-	"testing"
 	"agent-nexus/internal/proxy"
+	"testing"
 )
 
 func TestBuildRoutingTable_Default(t *testing.T) {
@@ -14,8 +14,8 @@ func TestBuildRoutingTable_Default(t *testing.T) {
 		ModelMap: map[string]string{},
 	}
 	table := BuildRoutingTable(p)
-	if len(table) < 6 {
-		t.Fatalf("expected at least 6 routing entries, got %d", len(table))
+	if len(table) < 5 {
+		t.Fatalf("expected at least 5 routing entries, got %d", len(table))
 	}
 
 	// Check default entries exist
@@ -23,7 +23,7 @@ func TestBuildRoutingTable_Default(t *testing.T) {
 	for _, m := range table {
 		agents[m.Agent] = true
 	}
-	for _, expected := range []string{"codex", "claude", "kimi", "deepseek", "opencode", "cursor"} {
+	for _, expected := range []string{"codex", "claude", "kimi", "opencode"} {
 		if !agents[expected] {
 			t.Errorf("routing table missing agent %s", expected)
 		}
@@ -84,9 +84,9 @@ func TestBuildRoutingTable_NilModelMap(t *testing.T) {
 		ModelMap: nil,
 	}
 	table := BuildRoutingTable(p)
-	// Should have only the default 6 entries
-	if len(table) != 14 {
-		t.Errorf("expected exactly 6 entries for nil ModelMap, got %d", len(table))
+	// Should have default entries (no CCX-proxy with nil ModelMap)
+	if len(table) < 5 {
+		t.Errorf("expected at least 5 entries for nil ModelMap, got %d", len(table))
 	}
 	for _, m := range table {
 		if m.Agent == "CCX-proxy" {

@@ -12,6 +12,7 @@ import (
 	"agent-nexus/internal/model"
 	"agent-nexus/internal/proxy"
 	"agent-nexus/internal/sniff"
+
 	"github.com/spf13/cobra"
 )
 
@@ -351,11 +352,11 @@ func TestResolverBuildRoutingTable_Basic(t *testing.T) {
 	}
 	table := model.BuildRoutingTable(p)
 
-	if len(table) < 6 {
-		t.Fatalf("expected at least 6 routing entries, got %d", len(table))
+	if len(table) < 5 {
+		t.Fatalf("expected at least 5 routing entries, got %d", len(table))
 	}
 
-	for _, agentName := range []string{"codex", "claude", "kimi", "opencode", "cursor"} {
+	for _, agentName := range []string{"codex", "claude", "kimi", "opencode"} {
 		found := false
 		for _, entry := range table {
 			if entry.Agent == agentName {
@@ -424,7 +425,7 @@ func TestWriterRegistry_AllWritersPresent(t *testing.T) {
 
 	expectedNames := []string{
 		"codex", "claude", "kimi", "deepseek", "opencode", "openclaw",
-		"cursor", "codebuddy", "hermes", "kiro", "grok", "qoder",
+		"codebuddy", "hermes", "kiro", "grok", "qoder",
 		"trae", "pi", "openclaude",
 	}
 

@@ -48,7 +48,6 @@ var modelSourceMap = map[string]ModelSource{
 	"opencode":   ModelSourceCustom,
 	"openclaw":   ModelSourceCustom,
 	"openclaude": ModelSourceCustom,
-	"cursor":     ModelSourceCustom,
 	"codebuddy":  ModelSourceCustom,
 	"lmstudio":   ModelSourceCustom,
 	"clawx":      ModelSourceCustom,
@@ -82,7 +81,6 @@ var nativeModelsMap = map[string]string{
 	"opencode":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
 	"openclaw":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
 	"openclaude":    "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"cursor":        "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
 	"codebuddy":     "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
 	"lmstudio":      "本地 LLM (通过 localhost 加载的任意模型，如 llama, qwen, mistral 等)",
 	"clawx":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
@@ -229,7 +227,7 @@ type AgentPath struct {
 	Protocol       string
 	ConfigFiles    []string
 	HomeDirFiles   []string
-	BinaryName     string // npm binary name, checked via exec.LookPath as fallback
+	BinaryName     string // binary name, checked via exec.LookupPath as fallback
 	IsConfigurable bool
 	Notes          string
 }
@@ -272,11 +270,10 @@ var registry = AgentRegistry{
 		{Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, BinaryName: "opencode", IsConfigurable: true},
 		{Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, BinaryName: "openclaw", IsConfigurable: true},
 		{Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
-		{Name: "cursor", Category: "ide", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Cursor/User/settings.json"}, IsConfigurable: true},
 		{Name: "codebuddy", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
-		{Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".hermes/config.yaml"}, IsConfigurable: true},
-		{Name: "kiro", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".kiro/config.yaml"}, IsConfigurable: true},
-		{Name: "grok", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".grok/config.yaml"}, IsConfigurable: true},
+		{Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".hermes/config.yaml"}, BinaryName: "hermes", IsConfigurable: true},
+		{Name: "kiro", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".kiro/config.yaml"}, BinaryName: "kiro", IsConfigurable: true},
+		{Name: "grok", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".grok/config.yaml"}, BinaryName: "grok", IsConfigurable: true},
 		{Name: "qoder", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".qoder/config.yaml"}, IsConfigurable: true},
 		{Name: "trae", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".traecli/config.yaml"}, IsConfigurable: true},
 		{Name: "antigravity", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".agents/config.yaml"}, IsConfigurable: false, Notes: "Google Gemini, no external model config"},
@@ -338,6 +335,19 @@ func Discover() []AgentInfo {
 			}
 		}
 
+		// Fallback: check uninstall dirs from install registry (directories
+		// created by the official installer, not dependent on PATH or config).
+		if !found && r.UninstallPaths != nil {
+			for _, rel := range r.UninstallPaths {
+				p := filepath.Join(home, rel)
+				if _, err := os.Stat(p); err == nil {
+					configPath = p
+					found = true
+					break
+				}
+			}
+		}
+
 		info := AgentInfo{
 			Name:           r.Name,
 			Category:       r.Category,
@@ -375,7 +385,7 @@ func checkConfigured(path string) bool {
 		strings.Contains(content, "platform.sensenova") ||
 		strings.Contains(content, "api.deepseek") ||
 		strings.Contains(content, "api.siliconflow") ||
-		strings.Contains(content, "localhost:11444")
+		strings.Contains(content, "localhost:11434")
 }
 
 func GetRegistry() []AgentPath {
