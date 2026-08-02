@@ -1,6 +1,14 @@
 package cmd
 
 import (
+	"agent-nexus/internal/db"
+	"agent-nexus/internal/discover"
+	"agent-nexus/internal/install"
+	"agent-nexus/internal/model"
+	"agent-nexus/internal/pre"
+	"agent-nexus/internal/proxy"
+	"agent-nexus/internal/sniff"
+	"agent-nexus/internal/versioning"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,17 +18,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"agent-nexus/internal/db"
-	"agent-nexus/internal/discover"
-	"agent-nexus/internal/install"
-	"agent-nexus/internal/model"
-	"agent-nexus/internal/pre"
-	"agent-nexus/internal/proxy"
-	"agent-nexus/internal/sniff"
-	"agent-nexus/internal/versioning"
+
 	"github.com/spf13/cobra"
 )
-
 
 var homeDir string
 var proxyURL string
@@ -184,7 +184,6 @@ var agentCmd = &cobra.Command{
 
 var discoverVerbose bool
 
-
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [-v]",
 	Short: "扫描并列出已安装的 AI agent",
@@ -273,6 +272,16 @@ var agentInstallCmd = &cobra.Command{
 		if a == nil {
 			return fmt.Errorf("未知 agent: %s\n\n可用列表: agent-nexus agent list", name)
 		}
+		// Check if already installed (skip unless --force)
+		if !installForce {
+			discovered := discover.Discover()
+			for _, d := range discovered {
+				if d.Name == name {
+					fmt.Printf("✅ %s 已安装，跳过\n\n安装后确认: agent-nexus agent discover 查看配置状态\n", d.Name)
+					return nil
+				}
+			}
+		}
 		platform := install.CurrentPlatform()
 		fmt.Printf("正在安装 %s (%s) 到 %s...\n", a.Display, platform, a.Notes)
 		fmt.Println()
@@ -284,6 +293,14 @@ var agentInstallCmd = &cobra.Command{
 					return fmt.Errorf("安装失败: %v", err)
 				}
 				fmt.Println("✅ 安装完成")
+				// On Windows, npm packages register .ps1 proxy scripts that require
+				// PowerShell execution policy to allow running scripts.
+				if runtime.GOOS == "windows" {
+					if err := enablePowerShellScripts(); err != nil {
+						fmt.Printf("\n⚠ 设置 PowerShell 执行策略失败: %v\n", err)
+						fmt.Printf("  请手动运行: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser\n")
+					}
+				}
 			} else if isPip {
 				if err := executePipCommand(fmt.Sprintf("install %s", a.PipPackage)); err != nil {
 					return fmt.Errorf("安装失败: %v", err)
@@ -1196,12 +1213,28 @@ func init() {
 // ========== UTILITY FUNCTIONS ==========
 
 func installAllRuntimes() error {
+	// Collect set of already-installed agent names from discovery
+	discovered := discover.Discover()
+	installedSet := make(map[string]bool)
+	for _, a := range discovered {
+		installedSet[a.Name] = true
+	}
+
 	agents := install.AllRuntimes()
-	fmt.Printf("\n正在安装 %d 个 CLI agent 运行时...\n", len(agents))
-	fmt.Println(strings.Repeat("-", 60))
+	skipped := 0
+	installed := 0
 	for _, a := range agents {
+		if _, ok := installedSet[a.Name]; ok {
+			fmt.Printf("  %s ...", a.Name)
+			fmt.Println(" ⏭ 已安装，跳过")
+			skipped++
+			continue
+		}
 		cmdStr, isNpm, isPip, isScript := a.InstallCommand()
 		if cmdStr == "" || strings.HasPrefix(cmdStr, "No install") {
+			fmt.Printf("  %s ...", a.Name)
+			fmt.Println(" ⏭ 当前平台无可用安装命令")
+			skipped++
 			continue
 		}
 		fmt.Printf("  正在安装 %s ...", a.Name)
@@ -1210,18 +1243,21 @@ func installAllRuntimes() error {
 				fmt.Printf(" ❌ %v\n", err)
 			} else {
 				fmt.Println(" ✅")
+				installed++
 			}
 		} else if isPip {
 			if err := executePipCommand(fmt.Sprintf("install %s", a.PipPackage)); err != nil {
 				fmt.Printf(" ❌ %v\n", err)
 			} else {
 				fmt.Println(" ✅")
+				installed++
 			}
 		} else if isScript {
 			if err := executeRemoteScript(cmdStr); err != nil {
 				fmt.Printf(" ❌ %v\n", err)
 			} else {
 				fmt.Println(" ✅")
+				installed++
 			}
 		} else {
 			if strings.HasPrefix(cmdStr, "http://") || strings.HasPrefix(cmdStr, "https://") {
@@ -1229,18 +1265,40 @@ func installAllRuntimes() error {
 					fmt.Printf(" ❌ %v\n", err)
 				} else {
 					fmt.Println(" ✅")
+					installed++
 				}
 			} else {
 				if err := executeCommand(cmdStr); err != nil {
 					fmt.Printf(" ❌ %v\n", err)
 				} else {
 					fmt.Println(" ✅")
+					installed++
 				}
 			}
 		}
 	}
-	fmt.Printf("\n安装完成，运行: agent-nexus agent discover 确认安装成功\n")
+	fmt.Printf("\n安装完成: %d 个新安装, %d 个跳过。运行: agent-nexus agent discover 确认安装成功\n", installed, skipped)
+	// On Windows, enable PowerShell execution policy so npm-installed .ps1 scripts can run.
+	if runtime.GOOS == "windows" {
+		if err := enablePowerShellScripts(); err != nil {
+			fmt.Printf("\n⚠ 设置 PowerShell 执行策略失败: %v\n", err)
+			fmt.Printf("  请手动运行: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser\n")
+		}
+	}
 	return nil
+}
+
+// enablePowerShellScripts sets CurrentUser execution policy to RemoteSigned,
+// allowing npm-installed .ps1 proxy scripts (e.g. codex.ps1, claude.ps1) to run.
+func enablePowerShellScripts() error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	psPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	cmd := exec.Command(psPath, "-NoProfile", "-Command", "Set-ExecutionPolicy", "RemoteSigned", "-Scope", "CurrentUser")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run()
 }
 
 func executeNpmCommand(args string, force bool) error {
@@ -1295,7 +1353,7 @@ func executeRemoteScript(url string) error {
 		return fmt.Errorf("script %s returned HTML instead of a script: %s", url, resp.Header.Get("Content-Type"))
 	}
 	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "installer_" + filepath.Base(url) + ".ps1")
+	tmpFile := filepath.Join(tmpDir, "installer_"+filepath.Base(url)+".ps1")
 	if err := os.WriteFile(tmpFile, body, 0644); err != nil {
 		return fmt.Errorf("failed to write temp script file: %w", err)
 	}
