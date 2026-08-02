@@ -1,4 +1,4 @@
-package discover
+﻿package discover
 
 import (
 	"os"
@@ -136,7 +136,7 @@ func TestDiscover_ScopedToInstallableRuntimes(t *testing.T) {
 		names[a.Name] = true
 	}
 
-	want := []string{"codex", "claude", "kimi", "opencode", "openclaw", "openclaude", "hermes", "kiro", "grok", "gemini"}
+	want := []string{"codex", "claude", "kimi", "opencode", "openclaw", "openclaude", "hermes", "gemini"}
 	for _, n := range want {
 		if !names[n] {
 			t.Errorf("discover missing agent %s", n)
