@@ -50,6 +50,30 @@ type BackupConfigEntry struct {
 	Error        string `db:"error"`
 }
 
+// ProxyModelRecord represents one upstream model from a proxy.
+// For custom-model agents, these model IDs are passed directly to the agent.
+// For redirect agents, a matching ProxyModelMapping row links a native model to an upstream model.
+type ProxyModelRecord struct {
+	ID        int    `db:"id"`
+	ProxyID   int    `db:"proxy_id"`
+	ModelID   string `db:"model_id"`
+	Category  string `db:"category"`
+	CreatedAt string `db:"created_at"`
+}
+
+// ProxyModelMapping represents a redirect mapping: native → upstream model.
+// Used when a redirect agent (kimi, hermes, qoder, trae) is configured
+// against a proxy from a given DB record.
+type ProxyModelMapping struct {
+	ID            int    `db:"id"`
+	ProxyID       int    `db:"proxy_id"`
+	AgentName     string `db:"agent_name"`
+	NativeModel   string `db:"native_model"`
+	UpstreamModel string `db:"upstream_model"`
+	Reason        string `db:"reason"`
+	CreatedAt     string `db:"created_at"`
+}
+
 type DB struct {
 	db *sql.DB
 }
@@ -130,6 +154,18 @@ func (d *DB) Init() error {
 		CREATE INDEX IF NOT EXISTS idx_entries_snapshot ON backup_config_entries(snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_entries_agent    ON backup_config_entries(agent_name);
 		CREATE INDEX IF NOT EXISTS idx_entries_sha256   ON backup_config_entries(sha256);
+	CREATE TABLE IF NOT EXISTS proxy_model_mappings (
+		id             INTEGER PRIMARY KEY AUTOINCREMENT,
+		proxy_id       INTEGER NOT NULL REFERENCES proxies(id) ON DELETE CASCADE,
+		agent_name     TEXT    NOT NULL,
+		native_model   TEXT    NOT NULL,
+		upstream_model TEXT    NOT NULL,
+		reason         TEXT    NOT NULL DEFAULT 'keyword',
+		created_at     TEXT    NOT NULL,
+		UNIQUE (proxy_id, agent_name, native_model)
+	);
+	CREATE INDEX IF NOT EXISTS idx_model_mapping_proxy ON proxy_model_mappings(proxy_id);
+	CREATE INDEX IF NOT EXISTS idx_model_mapping_agent ON proxy_model_mappings(agent_name);
 	`)
 	return err
 }
@@ -301,7 +337,6 @@ func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, 
 	return err
 }
 
-
 // ExistsByURL checks whether a proxy record with the given URL already exists.
 // Normalises the URL the same way the sniff module does: strips trailing slash
 // and appends "/v1" if absent, so the comparison matches what sniff.Sniff returns.
@@ -385,6 +420,134 @@ func (d *DB) TruncateReset() error {
 	}
 	_, err = d.db.Exec("DELETE FROM sqlite_sequence WHERE name = 'proxies'")
 	return err
+}
+
+// GetMinIDProxy returns the proxy record with the smallest (earliest) id.
+// Returns nil when the table is empty or no valid record exists.
+func (d *DB) GetMinIDProxy() (*ProxyRecord, error) {
+	var r ProxyRecord
+	var oaiCap, antCap int64
+	var ts string
+	err := d.db.QueryRow(`
+		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+		FROM proxies
+		ORDER BY id ASC
+		LIMIT 1
+	`).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts)
+	if err != nil {
+		return nil, err
+	}
+	r.OpenAICap = oaiCap != 0
+	r.AnthropicCap = antCap != 0
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		r.CreatedAt = t
+	}
+	return &r, nil
+}
+
+// UpsertProxyModelMapping upserts a single redirect mapping for a proxy.
+func (d *DB) UpsertProxyModelMapping(pm *ProxyModelMapping) error {
+	_, err := d.db.Exec(`
+		INSERT INTO proxy_model_mappings (proxy_id, agent_name, native_model, upstream_model, reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT DO UPDATE SET
+			upstream_model = excluded.upstream_model,
+			reason = excluded.reason
+	`, pm.ProxyID, pm.AgentName, pm.NativeModel, pm.UpstreamModel, pm.Reason, pm.CreatedAt)
+	return err
+}
+
+// GetModelsFromRecord parses the models_json field of a ProxyRecord into a
+// deduplicated, sorted model ID list. Returns nil when no models are stored.
+func GetModelsFromRecord(r *ProxyRecord) []string {
+	if r == nil || r.ModelsJSON == "" {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(r.ModelsJSON), &ids); err != nil {
+		return nil
+	}
+	// Deduplicate while preserving order, then sort for stable output.
+	seen := make(map[string]bool)
+	var deduped []string
+	for _, id := range ids {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			deduped = append(deduped, id)
+		}
+	}
+	return deduped
+}
+
+// GetModelMappingsByAgent returns all mappings for a given agent+proxy.
+// Returns nil slice (not nil) when no mappings exist.
+func (d *DB) GetModelMappingsByAgent(proxyID int, agentName string) ([]ProxyModelMapping, error) {
+	rows, err := d.db.Query(`
+		SELECT id, proxy_id, agent_name, native_model, upstream_model, reason, created_at
+		FROM proxy_model_mappings
+		WHERE proxy_id = ? AND agent_name = ?
+		ORDER BY id
+	`, proxyID, agentName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []ProxyModelMapping
+	for rows.Next() {
+		var m ProxyModelMapping
+		if err := rows.Scan(&m.ID, &m.ProxyID, &m.AgentName, &m.NativeModel, &m.UpstreamModel, &m.Reason, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, m)
+	}
+	return list, rows.Err()
+}
+
+// GetModelMappingByNative returns a single redirect mapping row.
+func (d *DB) GetModelMappingByNative(proxyID int, agentName, nativeModel string) (*ProxyModelMapping, error) {
+	var m ProxyModelMapping
+	err := d.db.QueryRow(`
+		SELECT id, proxy_id, agent_name, native_model, upstream_model, reason, created_at
+		FROM proxy_model_mappings
+		WHERE proxy_id = ? AND agent_name = ? AND native_model = ?
+	`, proxyID, agentName, nativeModel).Scan(&m.ID, &m.ProxyID, &m.AgentName, &m.NativeModel, &m.UpstreamModel, &m.Reason, &m.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// DeleteModelMappingsByProxy removes all redirect mappings for a proxy.
+func (d *DB) DeleteModelMappingsByProxy(proxyID int) error {
+	_, err := d.db.Exec("DELETE FROM proxy_model_mappings WHERE proxy_id = ?", proxyID)
+	return err
+}
+
+// GetAllModelMappingsByProxy returns all redirect mappings for a proxy
+// across all agents. Returns nil slice (not nil) when no mappings exist.
+func (d *DB) GetAllModelMappingsByProxy(proxyID int) []ProxyModelMapping {
+	rows, err := d.db.Query(`
+		SELECT id, proxy_id, agent_name, native_model, upstream_model, reason, created_at
+		FROM proxy_model_mappings
+		WHERE proxy_id = ?
+		ORDER BY id
+	`, proxyID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var list []ProxyModelMapping
+	for rows.Next() {
+		var m ProxyModelMapping
+		if err := rows.Scan(&m.ID, &m.ProxyID, &m.AgentName, &m.NativeModel, &m.UpstreamModel, &m.Reason, &m.CreatedAt); err != nil {
+			continue
+		}
+		list = append(list, m)
+	}
+	if list == nil {
+		list = []ProxyModelMapping{}
+	}
+	return list
 }
 
 func (d *DB) Count() (int, error) {

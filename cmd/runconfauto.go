@@ -1,33 +1,31 @@
 package cmd
 
 import (
-	"agent-nexus/internal/sniff"
 	"fmt"
-	"github.com/spf13/cobra"
 	"strings"
+
+	"agent-nexus/internal/sniff"
+	"github.com/spf13/cobra"
 )
 
 // confAutoCmd is the legacy "conf auto" command, now a thin alias for "conf set".
 //
 // Legacy behaviour:
-//   - auto-detect proxy only (no --url/--key/--db-id/--db on this command)
-//   - branch fixed to "main"
-//   - message: "conf auto: <agents>"
+//   - auto-detect proxy only (no --url/--key/--db on this command)
 //   - no interactive model confirmation
 //   - --dry-run supported
 //
-// Implementation: builds a runConfSetOpts with branch="main", the legacy
-// message prefix, and forwards to the unified runConfSet(opts). This keeps
-// "conf auto" backwards-compatible without duplicating the config pipeline.
+// Implementation: builds a runConfSetOpts and forwards to runConfSet(opts).
+// This keeps "conf auto" backwards-compatible without duplicating the pipeline.
 var confAutoCmd = &cobra.Command{
 	Use:   "auto --agents <list|all>",
 	Short: "自动配置 agent（别名，建议迁移到 conf set）",
 	Long: `自动配置指定 agent（通过 proxy.Detect 检测代理）。
 
 此命令是 "conf set" 的别名，保留以兼容旧用法。
-新代码请优先使用: agent-nexus conf set --agents all
+新代码请优先使用: agent-nexus conf set --agent all
 
-代理来源：自动检测（proxy.Detect），不读取 --db / --db-id。
+代理来源：自动检测（proxy.Detect），不读取 --db。
 
 示例：
   agent-nexus conf auto --agents all
@@ -36,11 +34,8 @@ var confAutoCmd = &cobra.Command{
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := runConfSetOpts{
-			agents:  caAgents,
-			models:  caModels,
-			branch:  "main",
-			message: "conf auto: " + caAgents,
-			dryRun:  caDryRun,
+			agent:  caAgents,
+			dryRun: caDryRun,
 		}
 
 		// Legacy: warn if a --models override is absent from upstream model list.
@@ -83,16 +78,11 @@ func initConfAutoCmd() {
 }
 
 // runConfAuto is the original standalone implementation kept as a thin alias
-// for backwards compatibility and for test fixtures (e.g. TestConfAutoDryRun_NoWrite).
-//
-// Delegates to runConfSet with branch="main" and the legacy message prefix.
+// for backwards compatibility and for test fixtures.
 func runConfAuto(agentsStr, modelsStr string, dryRun bool) error {
 	opts := runConfSetOpts{
-		agents:  agentsStr,
-		models:  modelsStr,
-		branch:  "main",
-		message: "conf auto: " + agentsStr,
-		dryRun:  dryRun,
+		agent:  agentsStr,
+		dryRun: dryRun,
 	}
 	return runConfSet(opts)
 }
