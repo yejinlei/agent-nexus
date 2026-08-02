@@ -578,3 +578,71 @@ writers: []ConfigWriter{
 - 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
 - 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
 - **OpenClaude** 配置写入 `~/.openclaude-env` 文件（.env 格式），启动时需指定：`openclaude --provider-env-file ~/.openclaude-env`。也可设置系统环境变量 `CLAUDE_CODE_USE_OPENAI=1`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 后直接运行 `openclaude`
+
+---
+
+## 常见问题
+
+### 安装后命令在当前终端无法识别
+
+部分 agent 的安装器会在安装过程中向用户 PATH 注册**新目录**（如 Kimi 安装到 `~\.kimi-code\bin`）。Windows 的 PATH 变更在注册表中立即生效，但**当前已打开的 PowerShell/终端进程不会自动刷新**——PATH 是在进程启动时从注册表读取的，后续注册表变更对该进程不可见。
+
+**表现**：
+
+```powershell
+# 安装完 kimi 后，当前终端
+kimi
+# kimi : 无法将"kimi"项识别为 cmdlet、函数、脚本文件或可运行程序的名称
+
+# 重新打开 PowerShell 后
+kimi --version  # ✅ 正常
+```
+
+**原因**：Kimi、Hermes、Grok 等通过官方安装脚本安装的 agent，会创建新的安装目录并写入注册表 PATH。而 Codex、Claude、Opencode、Openclaw 等通过 npm 安装的 agent，注册的是 npm 目录下的 `.ps1` 脚本代理——npm 目录在 Node.js 安装时就已在 PATH 中，因此不需要重开终端。
+
+**解决**：安装完成提示 `open a new terminal for it to take effect` 时，**重新打开 PowerShell** 即可。
+
+### Claude Code 提示 "Unable to connect to Anthropic services"
+
+在国内网络环境下，Claude Code 直连 `api.anthropic.com` 不可用，需通过代理配置：
+
+```powershell
+# 配置 claude 使用代理
+agent-nexus conf set --agents claude
+
+# 或手动指定代理
+agent-nexus conf set --agents claude --url http://127.0.0.1:3688/v1 --key sk-xxx
+```
+
+### npm 安装后命令无法执行："禁止运行脚本"
+
+npm 在 Windows 上安装的包（如 `@openai/codex`、`@anthropic-ai/claude-code`）会注册 `.ps1` 脚本代理。如果 PowerShell 执行策略为 `Restricted`（默认），则无法运行：
+
+```
+codex : 无法加载文件 ...codex.ps1，因为在此系统上禁止运行脚本
+PSecurityException: UnauthorizedAccess
+```
+
+**解决**：agent-nexus 在 npm 安装成功后会自动执行 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`。如果失败，请手动运行：
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+`-Scope CurrentUser` 仅影响当前用户，无需管理员权限。
+
+### 新编译的 agent-nexus.exe 无法运行："应用程序控制策略已阻止此文件"
+
+这是企业环境的 **AppLocker / 终端安全策略** 阻止了未签名的 exe 文件运行，与代码无关。
+
+**开发阶段解决方法**：使用 `go run .` 代替 `.\agent-nexus.exe`：
+
+```powershell
+# 编译 + 运行
+go build -o .\agent-nexus.exe .
+go run . pre install --tool=all
+go run . agent install codex
+go run . agent discover
+```
+
+`go run .` 通过 Go 工具链从 `%TEMP%` 运行，通常不在 AppLocker 管控范围内。
