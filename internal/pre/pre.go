@@ -278,11 +278,15 @@ func isWindowsAdmin() bool {
 	if runtime.GOOS != "windows" {
 		return true
 	}
-	// SECURITY hive at HKLM\SECURITY is only readable by administrators.
-	// Use Run() instead of Start()+Wait() to avoid compiler quirks.
-	cmd := exec.Command("reg", "query", "HKLM\\SECURITY\\Policy\\System")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return cmd.Run() == nil
+	// Use "whoami /groups" and check for the built-in administrators SID (S-1-5-32-544).
+	// This works reliably on all modern Windows versions and respects UAC elevation.
+	// NOTE: "reg query HKLM\SECURITY" does NOT work - Windows blocks enumerating
+	// the SECURITY key's subkeys even for admins (open-only permission), so reg query
+	// always returns ERROR (0x1) regardless of elevation.
+	cmd := exec.Command("whoami", "/groups")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(out)), "s-1-5-32-544")
 }
-
