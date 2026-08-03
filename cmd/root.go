@@ -751,7 +751,7 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 					for _, m := range result.Models {
 						modelIDs = append(modelIDs, m.ID)
 					}
-					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
+					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ResponsesCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
 						fmt.Printf("⚠ 保存失败: %v\n", addErr)
 					} else {
 						fmt.Printf("✅ 已保存到数据库: %s\n", result.BaseURL)

@@ -1,30 +1,35 @@
 package agent
 
 import (
+	"agent-nexus/internal/proxy"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
-	"agent-nexus/internal/proxy"
 )
 
 type claudeWriter struct{}
 
 func newClaudeWriter() *claudeWriter { return &claudeWriter{} }
 
-func (w *claudeWriter) Name() string     { return "claude" }
-func (w *claudeWriter) Category() string { return "cli" }
+func (w *claudeWriter) Name() string                     { return "claude" }
+func (w *claudeWriter) Category() string                 { return "cli" }
 func (w *claudeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" { model = modelDefault(w.Name()) }
-	var cfg map[string]interface{}
+	if model == "" {
+		model = modelDefault(w.Name())
+	}
+
+	cfg := make(map[string]interface{})
 	data, err := os.ReadFile(path)
 	if err != nil {
+		// New file: start with a clean Claude desktop config structure.
+		cfg = make(map[string]interface{})
+	} else if err := json.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return err
-	}
+
 	env := make(map[string]interface{})
 	if e, ok := cfg["env"]; ok {
 		env = e.(map[string]interface{})
@@ -36,11 +41,20 @@ func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) erro
 	cfg["effortLevel"] = "high"
 
 	out, _ := json.MarshalIndent(cfg, "", "  ")
+
+	// Ensure the parent directory exists (e.g. ~/.claude/ may not exist).
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(path, out, 0644)
 }
 
 func (w *claudeWriter) Status(path string) (bool, string) {
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, "未配置代理"
+	}
 	s := string(data)
 	configured := strings.Contains(s, "127.0.0.1") ||
 		strings.Contains(s, "platform.sensenova") || strings.Contains(s, "api.deepseek") ||

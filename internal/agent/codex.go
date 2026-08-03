@@ -1,70 +1,76 @@
 package agent
 
 import (
-	"os"
-	"regexp"
-	"strings"
 	"agent-nexus/internal/proxy"
+	"agent-nexus/internal/sniff"
+	"os"
+	"path/filepath"
 )
 
 type codexWriter struct{}
 
 func newCodexWriter() *codexWriter { return &codexWriter{} }
 
-func (w *codexWriter) Name() string     { return "codex" }
-func (w *codexWriter) Category() string { return "cli" }
+func (w *codexWriter) Name() string                     { return "codex" }
+func (w *codexWriter) Category() string                 { return "cli" }
 func (w *codexWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
+// Codex uses wire_api = "responses" which requires the upstream
+// endpoint to support OpenAI Responses API (/v1/responses).
+// Many endpoints (SenseNova, Anthropic-gateway, etc.) only support
+// /v1/chat/completions or /v1/messages.
+//
+// Configure probes the endpoint's /v1/responses path. If it responds
+// successfully, config is written with wire_api = "responses". Otherwise
+// configure is refused with a clear warning.
 func (w *codexWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" { model = modelDefault(w.Name()) }
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if model == "" {
+		model = modelDefault(w.Name())
+	}
+
+	// Probe Responses API support on this endpoint.
+	probe := sniff.ResponsesProbe(p.BaseURL, p.APIKey)
+	if !probe {
+		return &ErrProtocolIncompatible{
+			Agent:    "codex",
+			BaseURL:  p.BaseURL,
+			Reason:   "需要 Responses API (/v1/responses)",
+			Fallback: "使用支持 Responses API 的代理（如 CCX Desktop），或换用其他 agent（如 claude）",
+		}
+	}
+
+	content :=
+		"openai_base_url = \"" + p.BaseURL + "\"\n" +
+			"model_provider = \"ccswitch\"\n" +
+			"model = \"" + model + "\"\n" +
+			"\n" +
+			"[model_providers.ccswitch]\n" +
+			"name = \"Sensenova CC-Switch\"\n" +
+			"base_url = \"" + p.BaseURL + "\"\n" +
+			"api_key = \"" + p.APIKey + "\"\n" +
+			"wire_api = \"responses\"\n" +
+			"requires_openai_auth = false\n"
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	content := string(data)
-
-	// Replace or add openai_base_url
-	if hasPattern(content, `openai_base_url\s*=\s*".*"`) {
-		content = applyPattern(content, `openai_base_url\s*=\s*".*"`, "openai_base_url = \""+p.BaseURL+"\"")
-	} else {
-		content += "\nopenai_base_url = \"" + p.BaseURL + "\"\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
 	}
 
-	// Replace or add model_provider
-	if hasPattern(content, `model_provider\s*=\s*".*"`) {
-		content = applyPattern(content, `model_provider\s*=\s*".*"`, "model_provider = \"openai\"")
-	} else {
-		content += "\nmodel_provider = \"openai\"\n"
-	}
-
-	// Replace or add model
-	if hasPattern(content, `model\s*=\s*".*"`) {
-		content = applyPattern(content, `model\s*=\s*".*"`, "model = \""+model+"\"")
-	} else {
-		content += "\nmodel = \"" + model + "\"\n"
-	}
-
-	// Add ccswitch provider block if missing
-	if !strings.Contains(content, "[model_providers.ccswitch]") {
-		content += "\n[model_providers.ccswitch]\nname = \"Sensenova\"\nbase_url = \"https://token.sensenova.cn/v1\"\nrequires_openai_auth = false\n"
-	}
-
-	// Add API key
-	if !strings.Contains(content, "api_key") {
-		content += "\napi_key = \"" + p.APIKey + "\"\n"
-	}
-
-	return os.WriteFile(path, []byte(content), 0644)
+	return nil
 }
 
 func (w *codexWriter) Status(path string) (bool, string) {
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, "未配置代理"
+	}
 	s := string(data)
-	configured := strings.Contains(s, "127.0.0.1") &&
-		(strings.Contains(s, "3688") || strings.Contains(s, "sensenova") ||
-			strings.Contains(s, "platform.sensenova") || strings.Contains(s, "api.deepseek") ||
-			strings.Contains(s, "api.siliconflow") || strings.Contains(s, "localhost:11434"))
-	if configured {
+	// Codex is configured when it has a non-default openai_base_url
+	// (pointing at a local proxy or an external gateway).
+	if contains(s, "openai_base_url") && contains(s, "model_provider") {
 		return true, "via AI proxy"
 	}
 	return false, "未配置代理"
@@ -72,33 +78,16 @@ func (w *codexWriter) Status(path string) (bool, string) {
 
 func (w *codexWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", "error", "配置文件未找到"
-	}
-	s := string(data)
-	re := regexp.MustCompile(`model\s*=\s*"([^"]+)"`)
-	matches := re.FindStringSubmatch(s)
-	if len(matches) > 1 {
-		return matches[1], source, notes
-	}
 	return "", source, notes
 }
 
-func hasPattern(content, pattern string) bool {
-	re := regexp.MustCompile(pattern)
-	return re.MatchString(content)
-}
-
-func applyPattern(content, pattern, replacement string) string {
-	re := regexp.MustCompile(pattern)
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		if re.MatchString(line) {
-			lines[i] = replacement
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
 		}
 	}
-	return strings.Join(lines, "\n")
+	return false
 }
 
 // modelDefault returns the canonical default model for this writer's agent

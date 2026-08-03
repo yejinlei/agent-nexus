@@ -96,7 +96,7 @@ var registry = []Agent{
 		Display:        "OpenClaude",
 		Category:       "cli",
 		NpmPackage:     "@gitlawb/openclaude",
-		UninstallPaths: []string{".openclaude"},
+		UninstallPaths: []string{".openclaude-env"},
 		Download:       map[string]string{},
 		Protocol:       "openai",
 		Notes:          "OpenClaude CLI - npm install, openai-compatible provider",
@@ -107,7 +107,7 @@ var registry = []Agent{
 		Category:       "cli",
 		NpmPackage:     "",
 		LegacyBinPaths: []string{".local/bin/hermes.exe"},
-		UninstallPaths: []string{"AppData/Local/hermes"},
+		UninstallPaths: []string{".hermes"},
 		Download: map[string]string{
 			PlatformWindows: "https://hermes-agent.nousresearch.com/install.ps1",
 			PlatformDarwin:  "https://hermes-agent.nousresearch.com/install.sh",

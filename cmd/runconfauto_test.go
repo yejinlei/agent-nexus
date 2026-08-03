@@ -424,9 +424,8 @@ func TestWriterRegistry_AllWritersPresent(t *testing.T) {
 	writers := reg.All()
 
 	expectedNames := []string{
-		"codex", "claude", "kimi", "deepseek", "opencode", "openclaw",
-		"codebuddy", "hermes", "qoder",
-		"trae", "pi", "openclaude",
+		"codex", "claude", "kimi", "opencode", "openclaw",
+		"hermes", "openclaude",
 	}
 
 	writerNames := make(map[string]bool)

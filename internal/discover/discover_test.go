@@ -1,4 +1,4 @@
-﻿package discover
+package discover
 
 import (
 	"os"
@@ -161,7 +161,7 @@ func TestGetRegistry(t *testing.T) {
 		names[a.Name] = true
 	}
 
-	for _, expected := range []string{"codex", "claude", "kimi", "deepseek", "opencode", "openclaw", "antigravity", "copilot", "windsurf", "zed"} {
+	for _, expected := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "openclaude", "hermes", "gemini"} {
 		if !names[expected] {
 			t.Errorf("registry missing agent %s", expected)
 		}

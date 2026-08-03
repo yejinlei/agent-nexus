@@ -289,8 +289,8 @@ func probeUpstreamModels(baseURL, apiKey string) []string {
 // model written directly into their config.
 func isCustomModelAgent(agentName string) bool {
 	customAgents := []string{
-		"codex", "claude", "deepseek", "opencode", "openclaw",
-		"openclaude", "codebuddy", "lmstudio", "clawx",
+		"codex", "claude", "opencode", "openclaw", "openclaude",
+		"kimi", "hermes", "gemini",
 	}
 	for _, a := range customAgents {
 		if a == agentName {
@@ -430,6 +430,12 @@ func processAgents(
 		}
 		err := w.Configure(cfgPath, p, bestModel)
 		if err != nil {
+			if agent.IsProtocolIncompatible(err) {
+				pi := err.(*agent.ErrProtocolIncompatible)
+				fmt.Printf("  [INCOMPAT] %s: %s\n", name, pi.Reason)
+				fmt.Printf("            换用支持 %s 的代理（如 CCX Desktop），或使用其他 agent（如 claude）\n", pi.Reason)
+				continue
+			}
 			fmt.Printf("  [FAIL] %s: %v\n", name, err)
 			continue
 		}

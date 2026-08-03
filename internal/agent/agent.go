@@ -28,18 +28,12 @@ func NewWriterRegistry() *WriterRegistry {
 			newCodexWriter(),
 			newClaudeWriter(),
 			newKimiWriter(),
-			newDeepSeekWriter(),
 			newOpenCodeWriter(),
 			newOpenClawWriter(),
-			newCodeBuddyWriter(),
 			newHermesWriter(),
-			newQoderWriter(),
-			newTraeWriter(),
+			newGeminiWriter(),
 
-			// Pi (JSON-based config)
-			newPiWriter(),
-
-			// OpenClaude (TOML-based config)
+			// OpenClaude
 			newOpenClaudeWriter(),
 		},
 	}

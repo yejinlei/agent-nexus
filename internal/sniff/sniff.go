@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -15,6 +16,7 @@ type SniffResult struct {
 	BaseURL        string
 	OpenAICap      bool
 	AnthropicCap   bool
+	ResponsesCap   bool
 	ModelCount     int
 	Models         []ModelItem
 	DetectedFormat string
@@ -179,7 +181,7 @@ func Sniff(baseURL, apiKey string) (*SniffResult, error) {
 // sniffPath probes a single base URL that is guaranteed to end with /v1.
 // All three probes (models, OpenAI chat, Anthropic messages) are always executed.
 func sniffPath(baseURL, apiKey string) *SniffResult {
-		client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 
 	result := &SniffResult{
 		BaseURL: baseURL,
@@ -233,7 +235,7 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	// Probe 3: POST /v1/messages — Anthropic Messages API format.
 	messagesURL := baseURL + "/messages"
 	msgsReq := map[string]interface{}{
-		"model": testModel,
+		"model":      testModel,
 		"max_tokens": 4,
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": "say hello"},
@@ -268,8 +270,31 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		}
 	}
 
+	// Probe 4: POST /v1/responses — OpenAI Responses API format.
+	// Supported by CCX Desktop and some native OpenAI endpoints.
+	// Many proxy endpoints (SenseNova, Anthropic gateway, etc.) do NOT support it.
+	if testModel != "" {
+		responsesURL := baseURL + "/responses"
+		respReq := map[string]interface{}{
+			"model": testModel,
+			"input": "say hello",
+			"text": map[string]interface{}{
+				"format": map[string]interface{}{
+					"type": "simple_text",
+				},
+			},
+		}
+		respBody, _ := json.Marshal(respReq)
+		respResp, _ := doRequest(client, "POST", responsesURL, apiKey, bytes.NewReader(respBody))
+
+		if len(respResp) > 0 {
+			result.ResponsesCap = true
+			result.DetectedFormat += " + OpenAI Responses API"
+		}
+	}
+
 	// If no formats detected at all, note it.
-	if result.ModelCount == 0 && result.OpenAICap == false && result.AnthropicCap == false {
+	if result.ModelCount == 0 && result.OpenAICap == false && result.AnthropicCap == false && result.ResponsesCap == false {
 		if result.Notes == "" {
 			result.Notes = "未从该 endpoint 探测到可用模型，可能是自定义格式或需要特殊认证"
 		} else if !strings.Contains(result.Notes, "未从该 endpoint") {
@@ -284,7 +309,7 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 }
 
 // doRequest performs an HTTP request and returns the response body bytes.
-func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([ ]byte, error) {
+func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequest(method, urlStr, body)
 	if err != nil {
 		return nil, err
@@ -340,7 +365,7 @@ func fillExtraFields(models []ModelItem, rawBody []byte) {
 		}
 		modelID, ok := m["id"].(string)
 		if !ok {
-			}
+		}
 
 		extras := map[string]interface{}{}
 		for k, v := range m {
@@ -376,24 +401,103 @@ func (r *SniffResult) HasMultipleFormats() bool {
 	return r.OpenAICap && r.AnthropicCap
 }
 
+// ResponsesProbe is a standalone probe that checks whether an endpoint
+// supports the OpenAI Responses API (/v1/responses). Used by codex Configure
+// to refuse writing config when the upstream does not support the protocol.
+//
+// A connection error (e.g. the proxy is offline) does NOT mean the endpoint
+// lacks support — it just means the probe couldn't verify it. In that case
+// the probe returns true ("unknown, assume OK") so codex config is still
+// written. Only an explicit HTTP 4xx/5xx from the endpoint causes a
+// rejection, because that means the endpoint exists but does not implement
+// /v1/responses (e.g. SenseNova with only chat/completions).
+func ResponsesProbe(baseURL, apiKey string) bool {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if !strings.HasSuffix(baseURL, "/v1") {
+		baseURL += "/v1"
+	}
+	respReq := map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "say hello",
+	}
+	reqBody, err := json.Marshal(respReq)
+	if err != nil {
+		return true // JSON failure shouldn't block config
+	}
+	// Use an explicit no-proxy transport so we reach the target directly,
+	// not through any configured global (CCX / Socks) proxy.
+	// Transport.Proxy = nil still honours HTTP_PROXY env vars via
+	// ProxyFromEnvironment; returning nil explicitly disables it.
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+		},
+	}
+	_, err = doRequest(client, "POST", baseURL+"/responses", apiKey, bytes.NewReader(reqBody))
+	if err == nil {
+		return true // explicit success
+	}
+	// doRequest wraps HTTP errors as "HTTP 404: ..." or "HTTP 401: ..."
+	// and network errors as "HTTP 请求失败: <conn-error>". The former means
+	// the endpoint responded (but without /v1/responses). The latter means
+	// we couldn't reach it — treat as "unknown" and allow config.
+	if strings.Contains(err.Error(), "HTTP 请求失败") {
+		return true // network error → can't prove incompatibility
+	}
+	return false // HTTP response with non-2xx → no /v1/responses
+}
+
+// GeminiProtocolProbe checks whether an endpoint supports the Gemini native
+// API protocol (/v1beta/...). Gemini CLI requires this protocol; most
+// OpenAI-compatible gateways (SenseNova, etc.) do not support it.
+//
+// A connection error does NOT mean the endpoint lacks support — it just means
+// the probe couldn't verify. In that case the probe returns true ("unknown,
+// assume OK"). Only an explicit HTTP 4xx/5xx from the endpoint causes a
+// rejection, because that means the endpoint exists but does not implement
+// /v1beta/models.
+func GeminiProtocolProbe(baseURL, apiKey string) bool {
+	// Strip /v1 suffix if present; Gemini uses /v1beta
+	u := strings.TrimSuffix(baseURL, "/")
+	if strings.HasSuffix(u, "/v1") {
+		u = u[:len(u)-3]
+	}
+	reqBody, _ := json.Marshal(map[string]interface{}{"pageSize": 5})
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+		},
+	}
+	_, err := doRequest(client, "POST", u+"/v1beta/models", apiKey, bytes.NewReader(reqBody))
+	if err == nil {
+		return true
+	}
+	if strings.Contains(err.Error(), "HTTP 请求失败") {
+		return true
+	}
+	return false
+}
+
 // UpstreamModelList fetches the list of available model IDs from the proxy's
 // /v1/models endpoint. Returns a slice of model IDs (empty slice on failure).
 // Pass the full base URL including /v1 (e.g. "http://127.0.0.1:3688/v1").
 func UpstreamModelList(baseURL, apiKey string) []string {
-    baseURL = strings.TrimSuffix(baseURL, "/")
-    if !strings.HasSuffix(baseURL, "/v1") {
-        baseURL += "/v1"
-    }
-    modelsURL := baseURL + "/models"
-    client := &http.Client{Timeout: 10 * time.Second}
-    body, err := doRequest(client, "GET", modelsURL, apiKey, nil)
-    if err != nil {
-        return nil
-    }
-    models, _ := parseModels(body)
-    ids := make([]string, 0, len(models))
-    for _, m := range models {
-        ids = append(ids, m.ID)
-    }
-    return ids
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if !strings.HasSuffix(baseURL, "/v1") {
+		baseURL += "/v1"
+	}
+	modelsURL := baseURL + "/models"
+	client := &http.Client{Timeout: 10 * time.Second}
+	body, err := doRequest(client, "GET", modelsURL, apiKey, nil)
+	if err != nil {
+		return nil
+	}
+	models, _ := parseModels(body)
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	return ids
 }

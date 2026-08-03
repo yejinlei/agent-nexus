@@ -1,36 +1,59 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 
 	"agent-nexus/internal/shared"
 )
 
+// ErrProtocolIncompatible is returned when the upstream endpoint does not
+// support the protocol required by a particular agent (e.g. Codex needs the
+// OpenAI Responses API /v1/responses but the endpoint only serves
+// chat/completions or messages).
+type ErrProtocolIncompatible struct {
+	Agent    string
+	BaseURL  string
+	Reason   string
+	Fallback string
+}
+
+func (e *ErrProtocolIncompatible) Error() string {
+	msg := fmt.Sprintf("协议不兼容: %s 需要 %s，但 %s 不支持", e.Agent, e.Reason, e.BaseURL)
+	if e.Fallback != "" {
+		msg += fmt.Sprintf("；建议: %s", e.Fallback)
+	}
+	return msg
+}
+
+// IsProtocolIncompatible reports whether err is an ErrProtocolIncompatible.
+func IsProtocolIncompatible(err error) bool {
+	_, ok := err.(*ErrProtocolIncompatible)
+	return ok
+}
+
 // defaultSourceAndNotes holds the (source, notes) pair for each agent whose
 // default model requires non-trivial routing. The default model name itself is
 // looked up from the central shared.DefaultModels map via shared.GetDefaultModel.
 //
 // Source semantics (consistent with ResolveModelForAgent):
-//   "upstream"    = the agent's default model is normally available upstream.
-//   "proxy-map"   = the agent's default model needs proxy model-redefinition.
-//   "default"     = the agent's default model needs proxy redirect as-is.
+//
+//	"upstream"    = the agent's default model is normally available upstream.
+//	"proxy-map"   = the agent's default model needs proxy model-redefinition.
+//	"default"     = the agent's default model needs proxy redirect as-is.
 var defaultSourceAndNotes = map[string]struct {
 	source string
 	notes  string
 }{
-	"codex":     {"upstream", "upstream 支持，直接使用"},
-	"claude":    {"proxy-map", "上游不支持，走代理重定向"},
-	"kimi":      {"upstream", "upstream 支持，直接使用"},
-	"deepseek":  {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"opencode":  {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"cursor":    {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"openclaw":  {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"openclaude": {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"codebuddy": {"proxy-map", "上游不支持，走代理重定向"},
-	"hermes":    {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"qoder":     {"default", "上游不支持，使用默认模型（需代理重定向）"},
-	"trae":      {"default", "上游不支持，使用默认模型（需代理重定向）"},
+	"codex":      {"upstream", "upstream 支持，直接使用"},
+	"claude":     {"proxy-map", "上游不支持，走代理重定向"},
+	"kimi":       {"upstream", "upstream 支持，直接使用"},
+	"opencode":   {"upstream", "upstream 支持，直接使用"},
+	"openclaw":   {"upstream", "upstream 支持，直接使用"},
+	"openclaude": {"upstream", "upstream 支持，直接使用"},
+	"hermes":     {"default", "使用上游模型名"},
+	"gemini":     {"upstream", "使用上游 Gemini 原生模型名"},
 }
 
 // defaultModelInfo returns the default model, source label, and notes for a
@@ -99,6 +122,7 @@ func ExtractConfiguredModel(path string) (string, bool) {
 	}
 	return "", false
 }
+
 // modelDefault returns the canonical default model for this writer's agent
 // from the central shared.DefaultModels map.
 func modelDefault(agentName string) string {
