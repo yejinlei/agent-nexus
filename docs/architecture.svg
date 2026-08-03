@@ -88,7 +88,7 @@
   </g>
 
   <line x1="400" y1="380" x2="400" y2="408" stroke="#e17055" stroke-width="2" marker-end="url(#arrowO)"/>
-  <text x="415" y="400" fill="#fab1a0" font-family="system-ui,sans-serif" font-size="10" font-style="italic">重写配置指向 Proxy</text>
+  <text x="415" y="400" fill="#fab1a0" font-family="system-ui,sans-serif" font-size="10" font-style="italic">添加/映射模型 → 写入配置</text>
 
   <g transform="translate(40,410)">
     <rect width="720" height="155" rx="14" fill="url(#boxGradO)" stroke="#e17055" stroke-width="1.5" filter="url(#shadow)"/>
