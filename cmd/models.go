@@ -11,6 +11,7 @@ import (
 	"agent-nexus/internal/install"
 	"agent-nexus/internal/shared"
 	"agent-nexus/internal/sniff"
+
 	"github.com/spf13/cobra"
 )
 
@@ -207,70 +208,61 @@ DEPRECATED：旧的 --name / 位置参数 仍可工作，但请使用 --agents�
 
 var proxyModelsCmd = &cobra.Command{
 	Use:   "models --db <N|all>",
-	Short: "显示 AI 网关/厂家支持的大模型",
-	Long: `显示 AI 网关/厂家支持的大模型列表。模型来自已嗅探并保存到数据库的代理配置
-(sniff / db add)，或实时从代理 /v1/models 拉取。
+	Short: "[已弃用] 请使用 proxy detect --db <N|all>",
+	Long: `显示 AI 网关/厂家支持的大模型列表。
 
-默认行为：不加 --db 时，显示 DB 记录 1 的模型。
---db <N> 显示指定 ID 的代理记录的模型；--db all 显示数据库中所有记录。
-
-输出内容（每条记录）：
-  - 记录 ID、URL、检测到的协议格式
-  - OpenAI / Anthropic 兼容性
-  - 模型数量
-  - 模型列表
-
-用法：
-  agent-nexus proxy models                 显示 DB 记录 1 的模型
-  agent-nexus proxy models --db 1          同上
-  agent-nexus proxy models --db 2          显示 DB 记录 2
-  agent-nexus proxy models --db all        显示 DB 中所有记录的模型
+[已弃用] 推荐使用统一入口:
+  agent-nexus proxy detect --db <N|all>
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dbFlag := "1"
 		if proxyModelsDb != "" {
 			dbFlag = proxyModelsDb
 		}
+		return runProxyModels(dbFlag, proxyDetectVerbose)
+	},
+}
 
-		records, err := dbRecordsForID(dbFlag)
-		if err != nil {
-			return err
-		}
-		if len(records) == 0 {
-			fmt.Println("数据库中没有任何代理配置记录。")
-			fmt.Println()
-			return nil
-		}
-
-		for i, rec := range records {
-			if len(records) > 1 {
-				fmt.Printf("代理配置 #%d  (共 %d 条):\n", rec.ID, len(records))
-			} else {
-				fmt.Printf("代理配置 #%d:\n", rec.ID)
-			}
-			fmt.Printf("  URL:       %s\n", rec.URL)
-			fmt.Printf("  格式:      %s\n", rec.DetectedFormat)
-			fmt.Printf("  OpenAI:    %v\n", rec.OpenAICap)
-			fmt.Printf("  Anthropic: %v\n", rec.AnthropicCap)
-			fmt.Printf("  模型数量:  %d\n", rec.ModelCount)
-
-			models, src, aerr := upstreamModelsForProxy(rec)
-			if aerr != nil {
-				fmt.Printf("  模型列表:  %s\n", aerr.Error())
-			} else {
-				fmt.Printf("  来源:      %s\n", src)
-				fmt.Printf("  模型列表 (%d):\n", len(models))
-				for _, m := range models {
-					fmt.Printf("    - %s\n", m)
-				}
-			}
-			if i < len(records)-1 {
-				fmt.Println(strings.Repeat("-", 60))
-			}
-		}
+// runProxyModels 从数据库读取并显示 AI 网关模型列表（统一供 proxy detect --db 和 proxy models 使用）。
+func runProxyModels(dbFlag string, verbose bool) error {
+	records, err := dbRecordsForID(dbFlag)
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		fmt.Println("数据库中没有任何代理配置记录。")
 		fmt.Println()
 		return nil
-	},
+	}
+
+	for i, rec := range records {
+		if len(records) > 1 {
+			fmt.Printf("代理配置 #%d  (共 %d 条):\n", rec.ID, len(records))
+		} else {
+			fmt.Printf("代理配置 #%d:\n", rec.ID)
+		}
+		fmt.Printf("  URL:       %s\n", rec.URL)
+		fmt.Printf("  格式:      %s\n", rec.DetectedFormat)
+		fmt.Printf("  OpenAI:    %v\n", rec.OpenAICap)
+		fmt.Printf("  Anthropic: %v\n", rec.AnthropicCap)
+		fmt.Printf("  模型数量:  %d\n", rec.ModelCount)
+
+		models, src, aerr := upstreamModelsForProxy(rec)
+		if aerr != nil {
+			fmt.Printf("  模型列表:  %s\n", aerr.Error())
+		} else {
+			fmt.Printf("  来源:      %s\n", src)
+			fmt.Printf("  模型列表 (%d):\n", len(models))
+			for _, m := range models {
+				fmt.Printf("    - %s\n", m)
+			}
+		}
+		if i < len(records)-1 {
+			fmt.Println(strings.Repeat("-", 60))
+		}
+	}
+	fmt.Println()
+	return nil
 }
 
 var proxyModelsDb string
@@ -466,13 +458,13 @@ func initModelsCmds() {
 func initConfUpstreamModels() {
 	confCmd.AddCommand(&cobra.Command{
 		Use:   "upstream-models",
-		Short: "查询 AI 代理上游模型列表（已弃用，推荐 proxy models）",
+		Short: "查询 AI 代理上游模型列表（已弃用，推荐 proxy detect）",
 		Long: `查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
 
 该命令用于在自动配置前确认代理当前实际接入的模型。
 支持通过全局 --url / --key 指定代理，或使用自动检测。
 
-DEPRECATED: 推荐使用 "proxy models" 查看 DB 中已保存记录的模型。
+DEPRECATED: 推荐使用 "proxy detect" 查看 DB 中已保存记录的模型。
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := getProxySettings()

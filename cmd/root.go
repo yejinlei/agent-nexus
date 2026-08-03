@@ -9,6 +9,7 @@ import (
 	"agent-nexus/internal/proxy"
 	"agent-nexus/internal/sniff"
 	"agent-nexus/internal/versioning"
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,9 +54,9 @@ var rootCmd = &cobra.Command{
   agent-nexus agent install <name>  安装 agent 运行时
   agent-nexus agent uninstall <name> 卸载指定 agent
   agent-nexus agent update <name>   更新指定 agent
-  agent-nexus proxy detect          检测 AI 代理配置
+  agent-nexus proxy detect          检测 AI 代理配置并嗅探上游模型（统一入口）
   agent-nexus proxy route           显示模型路由表
-  agent-nexus proxy sniff           嗅探 LLM 提供商消息格式与模型
+  agent-nexus proxy check           检查已保存代理是否仍然有效
   agent-nexus db add                嗅探代理并保存到数据库
   agent-nexus db list               列出已保存的代理配置
   agent-nexus db show <id>          显示指定代理配置详情
@@ -66,7 +67,7 @@ var rootCmd = &cobra.Command{
   agent-nexus conf history          列出所有配置快照
   agent-nexus conf rollback -s <id> 恢复到指定快照
   agent-nexus conf diff --old --new 对比两个快照的差异
-  agent-nexus conf set --agents all  统一配置入口
+  agent-nexus conf set --agent all  统一配置入口
   agent-nexus conf branch           管理配置分支
   agent-nexus pre check              检查 agent 运行时依赖工具状态
   agent-nexus pre install            安装缺失的 agent 运行时依赖工具
@@ -624,36 +625,225 @@ func initAgentCmd() {
 
 var proxyCmd = &cobra.Command{
 	Use:   "proxy",
-	Short: "AI 消息网关管理（检测、路由、嗅探）",
-	Long: `代理管理命令组，用于检测 AI 代理配置、显示模型路由表、嗅探 LLM 提供商。
+	Short: "AI 消息网关管理（检测、路由、嗅探、检查）",
+	Long: `代理管理命令组，用于检测 AI 代理配置、嗅探上游模型、显示模型路由、检查代理有效性。
 
 子命令：
-  detect    检测 AI 代理配置
+  detect    检测 AI 代理配置 + 嗅探上游模型（统一入口）
   route     显示模型路由表
-  sniff     嗅探 LLM 提供商消息格式与模型
+  check     检查已保存代理是否仍然有效
 `,
 }
 
 var proxyDetectCmd = &cobra.Command{
 	Use:   "detect",
-	Short: "检测 AI 代理配置 (URL, Key, 模型映射)",
+	Short: "检测 AI 代理配置并嗅探上游模型",
+	Long: `检测 AI 代理配置（本机 CCX Desktop / CC-Switch 或自定义），嗅探上游模型列表。
+
+用法：
+  agent-nexus proxy detect                            自动检测本机代理 + 嗅探模型
+  agent-nexus proxy detect --url <url> --key <key>   探测指定 AI 网关
+  agent-nexus proxy detect --db <N|all>               从数据库读取已保存的网关模型
+  agent-nexus proxy detect --no-sniff                仅显示配置信息，不嗅探
+  agent-nexus proxy detect -v                         详细模式，显示完整模型列表
+`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Mode 1: --db flag → 从数据库读取
+		if proxyDetectDB != "" {
+			return runProxyModels(proxyDetectDB, proxyDetectVerbose)
+		}
+
+		// Mode 2: auto-detect 或 --url/--key
 		p, err := getProxySettings()
 		if err != nil || p == nil {
 			fmt.Printf("未能检测到 AI 代理配置: %v\n", err)
 			return err
 		}
-		fmt.Printf("\nAI 代理配置已检测:\n")
+
+		// 显示代理配置
+		fmt.Printf("\nAI 代理配置:\n")
 		fmt.Printf("  地址:   %s\n", p.BaseURL)
-		_ = p.Port
 		fmt.Printf("  密钥:   %s\n", p.APIKey)
-		fmt.Printf("\n  模型映射表 (%d 条):\n", len(p.ModelMap))
-		for src, dst := range p.ModelMap {
-			fmt.Printf("    %-15s → %s\n", src, dst)
+		if len(p.ModelMap) > 0 {
+			fmt.Printf("\n  模型映射表 (%d 条):\n", len(p.ModelMap))
+			for src, dst := range p.ModelMap {
+				fmt.Printf("    %-15s → %s\n", src, dst)
+			}
 		}
+
+		// Mode 3: 嗅探并显示模型
+		if !proxyDetectNoSniff {
+			fmt.Println()
+			return runSniffAndSave(p.BaseURL, p.APIKey, proxyDetectVerbose)
+		}
+
 		fmt.Println()
 		return nil
 	},
+}
+
+// runSniffAndSave 探测 AI 网关 endpoint，打印结果并自动保存到数据库
+func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
+	result, err := sniff.Sniff(baseURL, apiKey)
+	if err != nil {
+		fmt.Printf("嗅探失败: %v\n", err)
+		return err
+	}
+
+	fmt.Printf("嗅探结果: %s\n", result.BaseURL)
+	fmt.Printf("  检测格式: %s\n", result.DetectedFormat)
+	fmt.Printf("  OpenAI 兼容: %v\n", result.OpenAICap)
+	fmt.Printf("  Anthropic 兼容: %v\n", result.AnthropicCap)
+	fmt.Printf("  模型数量: %d\n", result.ModelCount)
+	if result.Notes != "" {
+		fmt.Printf("  备注: %s\n", result.Notes)
+	}
+	if verbose {
+		fmt.Printf("\n  模型列表 (%d):\n", len(result.Models))
+		for i, m := range result.Models {
+			fmt.Printf("  %3d. %s\n", i+1, m.ID)
+		}
+	}
+	fmt.Println()
+
+	// 自动保存到数据库
+	if result.ModelCount > 0 {
+		dbPath := filepath.Join(userHomeDir(), ".agent-nexus", "proxies.db")
+		dir := filepath.Dir(dbPath)
+		if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
+			fmt.Printf("⚠ 保存失败 (创建目录): %v\n", mkdirErr)
+		} else {
+			dbInst, openErr := db.New()
+			if openErr != nil {
+				fmt.Printf("⚠ 保存失败 (打开数据库): %v\n", openErr)
+			} else {
+				defer dbInst.Close()
+				if initErr := dbInst.Init(); initErr != nil {
+					fmt.Printf("⚠ 保存失败 (初始化数据库): %v\n", initErr)
+				} else if dbInst.ExistsByURL(result.BaseURL) {
+					fmt.Printf("ℹ 已存在，跳过重复添加: %s\n", result.BaseURL)
+				} else {
+					modelIDs := make([]string, 0, len(result.Models))
+					for _, m := range result.Models {
+						modelIDs = append(modelIDs, m.ID)
+					}
+					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
+						fmt.Printf("⚠ 保存失败: %v\n", addErr)
+					} else {
+						fmt.Printf("✅ 已自动保存到数据库: %s\n", result.BaseURL)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+var proxyCheckCmd = &cobra.Command{
+	Use:   "check <id>",
+	Short: "检查已保存代理是否仍然有效",
+	Long: `检查数据库中已保存的代理配置是否仍然有效。
+
+用法：
+  agent-nexus proxy check <id>    检查指定 ID 的记录
+  agent-nexus proxy check --all   检查所有记录
+
+对无效记录会交互提示是否删除。
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runProxyCheck(args, checkAll)
+	},
+}
+
+// runProxyCheck 检查代理有效性的共享逻辑，供 proxy check 和 db check（兼容别名）使用。
+func runProxyCheck(args []string, all bool) error {
+	dbInst, err := db.New()
+	if err != nil {
+		return fmt.Errorf("打开数据库失败: %v", err)
+	}
+	defer dbInst.Close()
+	if err := dbInst.Init(); err != nil {
+		return fmt.Errorf("初始化数据库失败: %v", err)
+	}
+
+	var records []db.ProxyRecord
+	if all {
+		records, err = dbInst.List()
+		if err != nil {
+			return fmt.Errorf("读取数据库失败: %v", err)
+		}
+	} else {
+		if len(args) < 1 {
+			return fmt.Errorf("请指定代理配置 ID 或使用 --all\n\n用法: agent-nexus proxy check <id>\n    agent-nexus proxy check --all")
+		}
+		id := parseInt(args[0])
+		record, getErr := dbInst.GetByID(id)
+		if getErr != nil {
+			return fmt.Errorf("查询 ID %s 失败: %v", args[0], getErr)
+		}
+		if record == nil {
+			fmt.Printf("未找到 ID 为 %s 的代理配置\n", args[0])
+			return nil
+		}
+		records = []db.ProxyRecord{*record}
+	}
+
+	if len(records) == 0 {
+		fmt.Println("数据库为空，没有可检查的记录。")
+		return nil
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	deleted := 0
+
+	for _, rec := range records {
+		fmt.Printf("\n[检查] ID=%d %s ...", rec.ID, rec.URL)
+		result, sniffErr := sniff.Sniff(rec.URL, rec.Key)
+
+		if sniffErr != nil {
+			fmt.Printf("\n  ❌ 无效: %v\n", sniffErr)
+			fmt.Printf("  该代理已失效，是否删除？(yes/no): ")
+			answer, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("读取输入失败: %v", err)
+			}
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "yes" {
+				if delErr := dbInst.Delete(rec.ID); delErr != nil {
+					fmt.Printf("  删除失败: %v\n", delErr)
+				} else {
+					fmt.Printf("  ✅ 已删除 ID=%d\n", rec.ID)
+					deleted++
+				}
+			} else {
+				fmt.Printf("  保留 ID=%d\n", rec.ID)
+			}
+		} else if result.DetectedFormat == "" && result.ModelCount == 0 {
+			fmt.Printf("\n  ❌ 无效: HTTP 200 但未检测到任何格式或模型\n")
+			fmt.Printf("  该代理已失效，是否删除？(yes/no): ")
+			answer, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("读取输入失败: %v", err)
+			}
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "yes" {
+				if delErr := dbInst.Delete(rec.ID); delErr != nil {
+					fmt.Printf("  删除失败: %v\n", delErr)
+				} else {
+					fmt.Printf("  ✅ 已删除 ID=%d\n", rec.ID)
+					deleted++
+				}
+			} else {
+				fmt.Printf("  保留 ID=%d\n", rec.ID)
+			}
+		} else {
+			fmt.Printf(" ✅ 有效 (格式: %s, 模型: %d)\n", result.DetectedFormat, result.ModelCount)
+		}
+	}
+
+	fmt.Printf("\n检查完成，共 %d 条记录，删除 %d 条\n", len(records), deleted)
+	return nil
 }
 
 var proxyRouteCmd = &cobra.Command{
@@ -680,83 +870,45 @@ var proxyRouteCmd = &cobra.Command{
 var sniffURL string
 var sniffKey string
 var sniffVerbose bool
+var proxyDetectDB string
+var proxyDetectNoSniff bool
+var proxyDetectVerbose bool
 var rmAll bool
 var checkAll bool
 
 var proxySniffCmd = &cobra.Command{
 	Use:   "sniff",
-	Short: "嗅探 LLM 提供商的消息格式和可用模型",
+	Short: "[已弃用] 请使用 proxy detect --url <url> --key <key>",
 	Long: `嗅探 LLM 提供商的 endpoint，自动检测其支持的消息格式和可用模型列表。
 
-用法：
-  agent-nexus proxy sniff -u https://api.example.com/v1 -k sk-xxx
-  agent-nexus proxy sniff -u http://127.0.0.1:3688/v1 -k key123 -v
+[已弃用] 推荐使用统一入口:
+  agent-nexus proxy detect --url <url> --key <key>
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := sniff.Sniff(sniffURL, sniffKey)
-		if err != nil {
-			fmt.Printf("嗅探失败: %v\n", err)
-			return err
-		}
-		fmt.Printf("\n嗅探结果: %s\n", result.BaseURL)
-		fmt.Printf("  检测格式: %s\n", result.DetectedFormat)
-		fmt.Printf("  OpenAI 兼容: %v\n", result.OpenAICap)
-		fmt.Printf("  Anthropic 兼容: %v\n", result.AnthropicCap)
-		fmt.Printf("  模型数量: %d\n", result.ModelCount)
-		fmt.Printf("  备注: %s\n", result.Notes)
-		if sniffVerbose {
-			fmt.Printf("\n  模型列表 (%d):\n", len(result.Models))
-			for i, m := range result.Models {
-				fmt.Printf("  %3d. %s\n", i+1, m.ID)
-			}
-		}
-		fmt.Println()
-
-		// Auto-save to DB when models are successfully detected; skip if URL already in DB.
-		if result.ModelCount > 0 {
-			dbPath := filepath.Join(userHomeDir(), ".agent-nexus", "proxies.db")
-			dir := filepath.Dir(dbPath)
-			if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
-				fmt.Printf("⚠ 保存失败 (创建目录): %v\n", mkdirErr)
-			} else {
-				dbInst, openErr := db.New()
-				if openErr != nil {
-					fmt.Printf("⚠ 保存失败 (打开数据库): %v\n", openErr)
-				} else {
-					defer dbInst.Close()
-					if initErr := dbInst.Init(); initErr != nil {
-						fmt.Printf("⚠ 保存失败 (初始化数据库): %v\n", initErr)
-					} else if dbInst.ExistsByURL(result.BaseURL) {
-						fmt.Printf("ℹ 已存在，跳过重复添加: %s\n", result.BaseURL)
-					} else {
-						modelIDs := make([]string, 0, len(result.Models))
-						for _, m := range result.Models {
-							modelIDs = append(modelIDs, m.ID)
-						}
-						if addErr := dbInst.Add(result.BaseURL, sniffKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
-							fmt.Printf("⚠ 保存失败: %v\n", addErr)
-						} else {
-							fmt.Printf("✅ 已自动保存到数据库: %s\n", result.BaseURL)
-						}
-					}
-				}
-			}
-		}
-
-		return nil
+		// 委托给 proxy detect
+		proxyURL = sniffURL
+		proxyKey = sniffKey
+		proxyDetectVerbose = sniffVerbose
+		proxyDetectNoSniff = false
+		return proxyDetectCmd.RunE(cmd, args)
 	},
 }
 
 func initProxyCmd() {
-
 	proxySniffCmd.Flags().StringVar(&sniffURL, "url", "", "LLM provider endpoint URL（必选）")
 	proxySniffCmd.Flags().StringVar(&sniffKey, "key", "", "LLM provider API key（必选）")
 	proxySniffCmd.MarkFlagRequired("url")
 	proxySniffCmd.MarkFlagRequired("key")
 	proxySniffCmd.Flags().BoolVarP(&sniffVerbose, "verbose", "v", false, "显示每个模型的详细信息")
 
+	// proxy detect flags
+	proxyDetectCmd.Flags().StringVar(&proxyDetectDB, "db", "", "从数据库读取：<N>=指定id，all=全部")
+	proxyDetectCmd.Flags().BoolVar(&proxyDetectNoSniff, "no-sniff", false, "仅显示配置，不嗅探")
+	proxyDetectCmd.Flags().BoolVarP(&proxyDetectVerbose, "verbose", "v", false, "显示完整模型列表")
+
 	proxyCmd.AddCommand(proxyDetectCmd)
 	proxyCmd.AddCommand(proxyRouteCmd)
+	proxyCmd.AddCommand(proxyCheckCmd)
 	proxyCmd.AddCommand(proxySniffCmd)
 
 	proxyCmd.AddCommand(&cobra.Command{
@@ -765,7 +917,7 @@ func initProxyCmd() {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("命令已移除。请使用 'agent-nexus db'（顶层命令）：\n\n  agent-nexus db list\n  agent-nexus db add -u <url> -k <key>\n  agent-nexus db show <id>\n  agent-nexus db rm <id>\n  agent-nexus db query [filter]\n  agent-nexus db check <id>")
+			return fmt.Errorf("命令已移除。请使用 'agent-nexus db'（顶层命令）或 'agent-nexus proxy check'：\n\n  agent-nexus db list\n  agent-nexus db add -u <url> -k <key>\n  agent-nexus db show <id>\n  agent-nexus db rm <id>\n  agent-nexus db query [filter]\n  agent-nexus proxy check <id>")
 		},
 	})
 }

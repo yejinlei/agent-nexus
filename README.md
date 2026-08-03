@@ -48,7 +48,7 @@ agent-nexus agent install codex
 agent-nexus agent install claude
 
 # 3. 嗅探 AI 网关并保存到 DB
-agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
+agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 
 # 4. 统一配置所有已安装的 agent（自动备份 → 添加/映射模型 → 写入配置）
 agent-nexus conf set --agent all --db auto
@@ -112,6 +112,33 @@ agent-nexus agent update codex
 
 安装后运行 `agent-nexus agent discover` 确认已安装 agent 列表和配置状态。
 
+## Proxy 配置：添加 AI 网关到数据库
+
+`conf set --db auto` 需要从代理数据库中选取 AI 网关记录，因此在统一配置前，需先通过 `db` 命令将 AI 网关信息存入 SQLite 数据库：
+
+```powershell
+# 嗅探并保存 AI 网关配置（自动检测消息格式和可用模型列表）
+agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
+
+# 列出已保存的网关记录
+agent-nexus db list
+
+# 查看某条记录的详情（含完整 API Key 和模型列表）
+agent-nexus db show 1
+
+# 按 ID 或 URL 子串查询
+agent-nexus db query example.com
+
+# 验证某条记录是否仍然有效
+agent-nexus db check 1
+agent-nexus db check --all
+
+# 删除记录
+agent-nexus db rm 1
+```
+
+> 提示：`proxy detect` 嗅探成功后会自动保存到数据库，无需手动执行 `db add`。
+
 ## 统一配置入口：`conf set`
 
 `agent-nexus conf set` 是唯一的配置入口，收紧了所有添加/映射大模型的操作：
@@ -165,7 +192,38 @@ agent-nexus conf set --agent all
 - **CCX Desktop**（自动检测）：读取 `~\AppData\Roaming\ccx-desktop\.config\config.json` 和 `.env`，默认监听 `127.0.0.1:3688`
 - **CC-Switch**（自动检测）：读取 `~\AppData\Roaming\cc-switch\.config\config.json` 和 `.env`
 - **自定义代理**（手动）：通过 `--url` + `--key` 指定任意代理地址
-- **代理数据库**：通过 `proxy db add` 嗅探并保存代理配置，供 `conf set --db auto` 复用
+- **代理数据库**：通过 `db add` 嗅探并保存代理配置，供 `conf set --db auto` 复用
+
+## Proxy 命令速查
+
+### proxy 命令组 — AI 消息网关管理
+
+```powershell
+# 统一入口：检测 + 嗅探 + 查询，通过 flag 切换模式
+agent-nexus proxy detect                            # 自动检测本机代理 + 嗅探模型
+agent-nexus proxy detect --url <url> --key <key>   # 探测指定 AI 网关
+agent-nexus proxy detect --db <N|all>               # 从数据库读取已保存的网关模型
+agent-nexus proxy detect --no-sniff                # 仅显示配置，不嗅探
+agent-nexus proxy detect -v                         # 详细模式，显示完整模型列表
+
+# 显示模型路由表：agent → 原生模型 → 目标上游模型 [来源]
+agent-nexus proxy route
+
+# 检查已保存代理是否仍然有效
+agent-nexus proxy check <id>
+agent-nexus proxy check --all
+```
+
+### db 命令组 — 代理数据库（SQLite）
+
+```powershell
+agent-nexus db add    -u <url> -k <key>   # 嗅探网关并保存到数据库
+agent-nexus db list                        # 列出所有已保存的代理记录
+agent-nexus db show   <id>                 # 查看记录详情（含完整 Key 和模型列表）
+agent-nexus db query  [filter]             # 按 ID 精确查询 或 URL 子串模糊查询
+agent-nexus db rm     <id>                 # 删除指定记录
+agent-nexus db rm     --all                # 清空所有记录
+```
 
 ## 配置版本化管理
 

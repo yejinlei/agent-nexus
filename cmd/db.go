@@ -10,6 +10,7 @@ import (
 
 	"agent-nexus/internal/db"
 	"agent-nexus/internal/sniff"
+
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +27,7 @@ var dbCmd = &cobra.Command{
   show    显示指定代理配置详情
   rm      删除指定代理配置
   query   查询代理配置（可选按 ID 或 URL 过滤）
-  check   嗅探代理配置记录是否仍然有效
+  check   [已弃用] 检查代理有效性，请使用 'proxy check'
 
 用法：
   agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
@@ -34,7 +35,7 @@ var dbCmd = &cobra.Command{
   agent-nexus db show <id>
   agent-nexus db rm <id>
   agent-nexus db query [filter]
-  agent-nexus db check <id>
+  agent-nexus proxy check <id>
 `,
 }
 
@@ -271,101 +272,15 @@ var dbQueryCmd = &cobra.Command{
 
 var dbCheckCmd = &cobra.Command{
 	Use:   "check <id>",
-	Short: "嗅探代理配置记录是否仍然有效",
-	Long: `嗅探 db 中保存的代理配置是否仍然有效。
+	Short: "[已弃用] 请使用 proxy check",
+	Long: `检查 db 中保存的代理配置是否仍然有效。
 
-用法：
-  agent-nexus db check <id>    嗅探指定 ID 的记录
-  agent-nexus db check --all   嗅探所有记录
-
-对无效记录会交互提示是否删除。
+[已弃用] 推荐使用:
+  agent-nexus proxy check <id>
+  agent-nexus proxy check --all
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbInst, err := db.New()
-		if err != nil {
-			return fmt.Errorf("打开数据库失败: %v", err)
-		}
-		defer dbInst.Close()
-		if err := dbInst.Init(); err != nil {
-			return fmt.Errorf("初始化数据库失败: %v", err)
-		}
-
-		var records []db.ProxyRecord
-		if checkAll {
-			records, err = dbInst.List()
-			if err != nil {
-				return fmt.Errorf("读取数据库失败: %v", err)
-			}
-		} else {
-			if len(args) < 1 {
-				return fmt.Errorf("请指定代理配置 ID 或使用 --all\n\n用法: agent-nexus db check <id>\n    agent-nexus db check --all")
-			}
-			id := parseInt(args[0])
-			record, getErr := dbInst.GetByID(id)
-			if getErr != nil {
-				return fmt.Errorf("查询 ID %s 失败: %v", args[0], getErr)
-			}
-			if record == nil {
-				fmt.Printf("未找到 ID 为 %s 的代理配置\n", args[0])
-				return nil
-			}
-			records = []db.ProxyRecord{*record}
-		}
-
-		if len(records) == 0 {
-			fmt.Println("数据库为空，没有可嗅探的记录。")
-			return nil
-		}
-
-		reader := bufio.NewReader(os.Stdin)
-		deleted := 0
-
-		for _, rec := range records {
-			fmt.Printf("\n[嗅探] ID=%d %s ...", rec.ID, rec.URL)
-			result, sniffErr := sniff.Sniff(rec.URL, rec.Key)
-
-			if sniffErr != nil {
-				fmt.Printf("\n  ❌ 无效: %v\n", sniffErr)
-				fmt.Printf("  该代理已失效，是否删除？(yes/no): ")
-				answer, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("读取输入失败: %v", err)
-				}
-				answer = strings.TrimSpace(strings.ToLower(answer))
-				if answer == "yes" {
-					if delErr := dbInst.Delete(rec.ID); delErr != nil {
-						fmt.Printf("  删除失败: %v\n", delErr)
-					} else {
-						fmt.Printf("  ✅ 已删除 ID=%d\n", rec.ID)
-						deleted++
-					}
-				} else {
-					fmt.Printf("  保留 ID=%d\n", rec.ID)
-				}
-			} else if result.DetectedFormat == "" && result.ModelCount == 0 {
-				fmt.Printf("\n  ❌ 无效: HTTP 200 但未检测到任何格式或模型\n")
-				fmt.Printf("  该代理已失效，是否删除？(yes/no): ")
-				answer, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("读取输入失败: %v", err)
-				}
-					if answer == "yes" {
-					if delErr := dbInst.Delete(rec.ID); delErr != nil {
-						fmt.Printf("  删除失败: %v\n", delErr)
-					} else {
-						fmt.Printf("  ✅ 已删除 ID=%d\n", rec.ID)
-						deleted++
-					}
-				} else {
-					fmt.Printf("  保留 ID=%d\n", rec.ID)
-				}
-			} else {
-				fmt.Printf(" ✅ 有效 (格式: %s, 模型: %d)\n", result.DetectedFormat, result.ModelCount)
-			}
-		}
-
-		fmt.Printf("\n嗅探完成，共 %d 条记录，删除 %d 条\n", len(records), deleted)
-		return nil
+		return runProxyCheck(args, checkAll)
 	},
 }
 
@@ -379,7 +294,7 @@ func initDbCmd() {
 	dbAddCmd.Flags().BoolVarP(&sniffVerbose, "verbose", "v", false, "显示每个模型的详细信息")
 
 	dbRmCmd.Flags().BoolVar(&rmAll, "all", false, "删除全部代理配置并重置 ID 计数器")
-	dbCheckCmd.Flags().BoolVar(&checkAll, "all", false, "检查所有代理配置（嗅探 + 交互式删除失效条目）")
+	dbCheckCmd.Flags().BoolVar(&checkAll, "all", false, "[已弃用] 请使用 proxy check --all")
 
 	dbCmd.AddCommand(dbAddCmd)
 	dbCmd.AddCommand(dbListCmd)

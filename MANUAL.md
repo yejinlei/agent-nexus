@@ -3,17 +3,16 @@
 ## 功能概览
 
 - **自动发现**：扫描本机已安装的 AI agent（11 个，CLI + IDE）
-- **代理检测**：自动读取 CCX Desktop / CC-Switch 配置（URL、Key、模型映射表），也支持任意自定义代理
+- **代理检测**：自动读取 CCX Desktop / CC-Switch 配置（URL、Key、模型映射表），也支持任意自定义代理；统一入口 `proxy detect` 同时支持嗅探和 DB 查询
 - **配置写入**：支持 `--url` / `--key` 全局选项，或从代理数据库（SQLite）选择
 - **自动备份**：配置生效前自动创建版本化快照（支持分支）
-- **统一配置入口**：`agent-nexus conf set --agents all` 完成完整流程
+- **统一配置入口**：`agent-nexus conf set --agent all` 完成完整流程
 - **模型路由**：三层模型重定向机制，匹配最佳后端
 - **版本化管理**：配置快照（snapshot）、分支（branch）、差异对比（diff）、回滚（restore）
-- **LLM 嗅探**：自动检测 LLM 提供商的消息格式和可用模型
 - **彩色输出**：终端彩色状态显示
 - **代理数据库**：嵌入式 SQLite，持久保存已嗅探的代理配置
 
----
+***
 
 ## 支持的 Agent
 
@@ -21,26 +20,26 @@ agent-nexus 围绕 8 个可安装的 agent 运行时构建（`agent list` 返回
 
 ### 可配置（通过代理转发）— 7 个
 
-| Agent | 类型 | 协议 | 说明 |
-|-------|------|------|------|
-| codex | CLI | OpenAI Compatible | 任意上游模型 |
-| claude | CLI | OpenAI Compatible | 任意上游模型 |
-| kimi | CLI | ACP | 需代理路由映射 |
-| opencode | CLI | OpenAI Compatible | 任意上游模型 |
-| openclaw | CLI | OpenAI Compatible | 任意上游模型 |
+| Agent      | 类型  | 协议                | 说明        |
+| ---------- | --- | ----------------- | --------- |
+| codex      | CLI | OpenAI Compatible | 任意上游模型    |
+| claude     | CLI | OpenAI Compatible | 任意上游模型    |
+| kimi       | CLI | ACP               | 需代理路由映射   |
+| opencode   | CLI | OpenAI Compatible | 任意上游模型    |
+| openclaw   | CLI | OpenAI Compatible | 任意上游模型    |
 | openclaude | CLI | OpenAI Compatible | .env 格式配置 |
-| hermes | CLI | ACP | 需代理路由映射 |
+| hermes     | CLI | ACP               | 需代理路由映射   |
 
 ### 不可配置（无外部模型配置字段）— 1 个
 
-| Agent | 类型 | 说明 |
-|-------|------|------|
+| Agent  | 类型  | 说明                                           |
+| ------ | --- | -------------------------------------------- |
 | gemini | CLI | Google Gemini CLI，Google auth（OAuth/API key） |
 
 > 以下 agent 可在本机被发现（`agent discover` 仍会识别），但不在可安装运行时列表中，因此不参与 `agent models` 等命令：
 > antigravity（Google Gemini, OAuth/API key）、copilot（GitHub 账号权益）、deveco（华为 OpenCode 引擎）、pi（Inflection Pi）、deepseek（OpenAI Compatible, 无内置安装器）、codebuddy（Claude Code 兼容, 无内置安装器）、qoder（ACP）、trae（ACP）、lmstudio（OpenAI Compatible）、clawx（IDE）、qoder-ide / trae-ide / codebuddy-ide / windsurf（IDE 自有 AI 后端）、zed（无内置 AI Agent）。
 
----
+***
 
 ## 安装
 
@@ -59,7 +58,7 @@ go mod tidy
 go build -o agent-nexus.exe
 ```
 
----
+***
 
 ## 全局选项
 
@@ -71,7 +70,7 @@ agent-nexus proxy detect --url http://proxy:9000/v1 --key abc
 agent-nexus --home /custom/path agent discover
 ```
 
----
+***
 
 ## 快速开始
 
@@ -85,7 +84,7 @@ agent-nexus agent install codex
 agent-nexus agent install claude
 
 # 3. 嗅探 AI 网关并保存到 DB
-agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
+agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 
 # 4. 统一配置所有已安装 agent（自动备份 → 添加/映射模型 → 写入配置）
 agent-nexus conf set --agent all --db auto
@@ -95,7 +94,7 @@ agent-nexus agent discover
 agent-nexus agent discover -v   # 显示模型详情
 ```
 
----
+***
 
 ## 代理支持
 
@@ -114,27 +113,27 @@ agent-nexus 支持四种代理接入方式：
 通过 `--url` + `--key` 指定任意代理地址：
 
 ```powershell
-agent-nexus conf set --agents all --url http://127.0.0.1:8080/v1 --key sk-your-key
+agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-your-key
 agent-nexus proxy detect --url https://proxy.example.com/v1 --key abc123
 agent-nexus proxy route --url http://my-local-proxy:9000/v1 --key mykey
-agent-nexus proxy sniff -u https://token.sensenova.cn/v1 -k sk-xxx
+agent-nexus proxy detect --url https://token.sensenova.cn/v1 --key sk-xxx -v
 ```
 
 ### 代理数据库
 
-通过 `proxy db add` 嗅探并保存代理配置到嵌入式 SQLite 数据库，供后续 `conf set --db auto` 复用（详见下方 [proxy db 命令](#proxy-db-命令)）。
+通过 `db add` 嗅探并保存代理配置到嵌入式 SQLite 数据库，供后续 `conf set --db auto` 复用（详见下方 [db 命令](#db-命令)）。
 
 ### 代理类型汇总
 
-| 代理类型 | 说明 |
-|---------|------|
-| CCX Desktop | 自动检测 CCX Desktop 配置 |
-| CC-Switch | 自动检测 CC-Switch 配置 |
-| 自定义代理 | 通过 `--url` + `--key` 手动指定 |
-| 本地代理 | 通过 `--url` 指定本地运行的代理 |
-| 代理数据库 | `proxy db add` 嗅探保存，`conf set --db auto` 复用 |
+| 代理类型        | 说明                                    |
+| ----------- | ------------------------------------- |
+| CCX Desktop | 自动检测 CCX Desktop 配置                   |
+| CC-Switch   | 自动检测 CC-Switch 配置                     |
+| 自定义代理       | 通过 `--url` + `--key` 手动指定             |
+| 本地代理        | 通过 `--url` 指定本地运行的代理                  |
+| 代理数据库       | `db add` 嗅探保存，`conf set --db auto` 复用 |
 
----
+***
 
 ## pre 命令：运行时依赖管理
 
@@ -158,16 +157,16 @@ agent-nexus pre install --tool node
 
 自动安装根据平台选择包管理器：
 
-| 平台 | 包管理器 | 示例命令 |
-|------|----------|----------|
-| Windows | winget | `winget install -e --id OpenJS.NodeJS.LTS` |
-| Linux (Debian/Ubuntu) | apt | `apt install -y nodejs npm` |
-| Linux (RHEL/CentOS/Fedora) | yum/dnf | `yum install -y nodejs npm` |
-| macOS | brew | `brew install node` |
+| 平台                         | 包管理器    | 示例命令                                       |
+| -------------------------- | ------- | ------------------------------------------ |
+| Windows                    | winget  | `winget install -e --id OpenJS.NodeJS.LTS` |
+| Linux (Debian/Ubuntu)      | apt     | `apt install -y nodejs npm`                |
+| Linux (RHEL/CentOS/Fedora) | yum/dnf | `yum install -y nodejs npm`                |
+| macOS                      | brew    | `brew install node`                        |
 
 自动安装失败时，会打印手动安装提示。
 
----
+***
 
 ## agent 命令：Agent 运行时管理
 
@@ -235,18 +234,35 @@ agent-nexus agent models claude             # 同上（位置参数）
 - 模型列表：agent 本身可接受的模型名
 - 说明：备注信息
 
----
+***
 
 ## 代理命令：proxy
 
-### proxy detect
+### proxy detect（统一入口）
 
-检测 AI 代理配置（URL、Key、模型映射）：
+检测 AI 代理配置并嗅探上游模型。通过 flag 切换三种模式：
 
 ```powershell
+# 模式 1：自动检测本机代理 + 嗅探上游模型
 agent-nexus proxy detect
-agent-nexus proxy detect --url http://proxy:9000/v1 --key abc
+
+# 模式 2：探测指定 AI 网关
+agent-nexus proxy detect --url https://api.example.com/v1 --key sk-xxx
+agent-nexus proxy detect --url http://127.0.0.1:3688/v1 --key key123 -v
+
+# 模式 3：从数据库读取已保存的网关模型
+agent-nexus proxy detect --db 1
+agent-nexus proxy detect --db all
+
+# 仅显示配置信息，不嗅探
+agent-nexus proxy detect --no-sniff
 ```
+
+| 模式 | 触发条件 | 行为 |
+|------|---------|------|
+| 自动检测+嗅探 | 无 `--db`/`--url`/`--key` | 检测本机 CCX Desktop/CC-Switch → 嗅探 → 自动保存 DB |
+| 指定网关探测 | `--url` + `--key` | 探测指定 endpoint → 嗅探 → 自动保存 DB |
+| DB 查询 | `--db <N\|all>` | 从 DB 读取已保存的网关模型列表（无网络请求） |
 
 ### proxy route
 
@@ -257,83 +273,78 @@ agent-nexus proxy route
 agent-nexus proxy route --url http://proxy:9000/v1 --key abc
 ```
 
-### proxy sniff
+### proxy check
 
-嗅探 LLM 提供商的 endpoint，自动检测其支持的消息格式和可用模型列表：
-
-```powershell
-agent-nexus proxy sniff -u https://api.example.com/v1 -k sk-xxx
-agent-nexus proxy sniff -u http://127.0.0.1:3688/v1 -k key123 -v
-```
-
-### proxy db 命令
-
-`proxy db` 命令用于管理已嗅探的代理配置数据库（嵌入式 SQLite），支持嗅探、保存、查看、检查、删除代理记录。
+检查数据库中已保存的代理配置是否仍然有效。对无效记录交互提示是否删除：
 
 ```powershell
-agent-nexus proxy db add  -u <url> -k <key>  嗅探并保存到数据库
-agent-nexus proxy db list                        列出已保存的代理配置
-agent-nexus proxy db show <id>                   显示代理配置详情
-agent-nexus proxy db rm <id>                     删除指定代理配置
-agent-nexus proxy db rm --all                    删除全部代理配置
-agent-nexus proxy db query [filter]              查询代理配置（按 ID 或 URL 过滤）
-agent-nexus proxy db check <id>                  嗅探指定记录是否仍然有效
-agent-nexus proxy db check --all                 嗅探所有记录
+agent-nexus proxy check <id>       # 检查指定 ID
+agent-nexus proxy check --all      # 检查所有记录
 ```
 
-#### `proxy db add`
+### db 命令
+
+`db` 命令用于管理已嗅探的代理配置数据库（嵌入式 SQLite），支持嗅探、保存、查看、删除代理记录。
+
+```powershell
+agent-nexus db add  -u <url> -k <key>  嗅探并保存到数据库
+agent-nexus db list                        列出已保存的代理配置
+agent-nexus db show <id>                   显示代理配置详情
+agent-nexus db rm <id>                     删除指定代理配置
+agent-nexus db rm --all                    删除全部代理配置
+agent-nexus db query [filter]              查询代理配置（按 ID 或 URL 过滤）
+agent-nexus db check <id>                  嗅探指定记录是否仍然有效
+agent-nexus db check --all                 嗅探所有记录
+```
+
+#### `db add`
 
 嗅探指定代理 URL，自动检测消息格式和可用模型列表，保存到 SQLite 数据库：
 
 ```powershell
-agent-nexus proxy db add -u https://api.example.com/v1 -k sk-xxx
+agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 ```
 
-#### `proxy db list`
+#### `db list`
 
 列出数据库中所有已保存的代理配置：
 
 ```powershell
-agent-nexus proxy db list
+agent-nexus db list
 ```
 
-#### `proxy db show <id>`
+#### `db show <id>`
 
 显示指定 ID 的代理配置完整详情，包括完整 API Key 和全部模型名称列表：
 
 ```powershell
-agent-nexus proxy db show 2
+agent-nexus db show 2
 ```
 
-#### `proxy db rm <id>` / `rm --all`
+#### `db rm <id>` / `rm --all`
 
 删除指定 ID 的代理配置记录；`--all` 删除数据库中所有记录并重置 ID 计数器：
 
 ```powershell
-agent-nexus proxy db rm 2
-agent-nexus proxy db rm --all
+agent-nexus db rm 2
+agent-nexus db rm --all
 ```
 
-#### `proxy db query [filter]`
+#### `db query [filter]`
 
 按 ID 或 URL 子串过滤查询代理配置：
 
 ```powershell
-agent-nexus proxy db query 1              # 按 ID 精确查询
-agent-nexus proxy db query example.com    # 按 URL 子串模糊查询
-agent-nexus proxy db query                # 列出所有记录
+agent-nexus db query 1              # 按 ID 精确查询
+agent-nexus db query example.com    # 按 URL 子串模糊查询
+agent-nexus db query                # 列出所有记录
 ```
 
-#### `proxy db check <id>` / `check --all`
+#### `db check <id>` / `check --all`（已弃用）
 
-嗅探指定 ID 或所有记录是否仍然有效（相当于 `proxy sniff`）。对无效记录交互提示是否删除：
+> ⚠ 已弃用，请使用 [`proxy check`](#proxy-check) 替代。
 
-```powershell
-agent-nexus proxy db check 2
-agent-nexus proxy db check --all
-```
-
----
+***
 
 ## conf 命令：配置管理
 
@@ -363,13 +374,13 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 
 #### 参数说明
 
-| 参数 | 说明 |
-|------|------|
-| `--agent` / `-a` | 指定 agent（逗号分隔），`all` 代表所有可配置 agent（默认 `all`） |
-| `--db` | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
-| `--dry-run` / `-d` | 预览模式，不实际写入 |
-| `--url` | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测） |
-| `--key` | 全局选项，直接指定代理 API Key |
+| 参数                 | 说明                                              |
+| ------------------ | ----------------------------------------------- |
+| `--agent` / `-a`   | 指定 agent（逗号分隔），`all` 代表所有可配置 agent（默认 `all`）    |
+| `--db`             | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
+| `--dry-run` / `-d` | 预览模式，不实际写入                                      |
+| `--url`            | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测）                    |
+| `--key`            | 全局选项，直接指定代理 API Key                             |
 
 #### 代理来源优先级（从高到低）
 
@@ -383,12 +394,14 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 `conf set` 根据 agent 类型自动选择策略：
 
 **自定义模型 agent**（codex/claude/deepseek/opencode/openclaw/openclaude/codebuddy）：
+
 - 策略：**自动添加**
 - 从 DB 网关记录的 upstream 模型列表中，通过 `PickCustomModel` 算法选取最佳匹配模型
 - 选模算法：精确匹配 → 关键字匹配 → 兜底首个
 - 将选取的模型名直接写入 agent 配置文件
 
 **重定向模型 agent**（kimi/hermes/qoder/trae）：
+
 - 策略：**映射**
 - 将 agent 原生模型名映射到 upstream 模型
 - 映射算法（4 步）：
@@ -401,6 +414,7 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 #### 自动备份
 
 配置写入前自动触发全量备份（`createAutoBackup`）：
+
 - 统一 UUID 关联 DB 与文件系统
 - DB 双写：`backup_snapshots` + `backup_config_entries`
 - 文件系统：`~/.codex/backups/snapshots/<UUID>/`
@@ -461,9 +475,11 @@ agent-nexus conf branch show                 # 显示当前分支信息
 agent-nexus conf backup --branch production     # 在指定分支上创建快照
 ```
 
-### conf upstream-models
+### conf upstream-models（已弃用）
 
-查询 AI 代理（如 CCX/Desktop）的上游可用模型列表，用于在配置前确认代理当前实际接入的模型：
+查询 AI 代理（如 CCX/Desktop）的上游可用模型列表。
+
+> ⚠ 已弃用，推荐使用 `proxy detect` 替代。
 
 ```powershell
 agent-nexus conf upstream-models
@@ -481,14 +497,19 @@ agent-nexus conf auto --agents all --dry-run
 
 ### 已弃用命令
 
-| 旧命令 | 替代命令 |
-|--------|---------|
-| `agent configure` | `conf set` |
-| `conf auto` | `conf set` |
-| `conf bak` | `conf backup` |
-| `conf show` | `conf backup --message` |
+| 旧命令               | 替代命令                    |
+| ----------------- | ----------------------- |
+| `agent configure` | `conf set`              |
+| `conf auto`       | `conf set`              |
+| `conf bak`        | `conf backup`           |
+| `conf show`       | `conf backup --message` |
+| `conf upstream-models` | `proxy detect`       |
+| `proxy sniff`     | `proxy detect --url ... --key ...` |
+| `proxy models`    | `proxy detect --db ...` |
+| `proxy db *`      | `db *`                  |
+| `db check`        | `proxy check`           |
 
----
+***
 
 ## 模型路由与映射
 
@@ -511,6 +532,7 @@ flowchart LR
 适用于 codex、claude、deepseek、opencode、openclaw、openclaude、codebuddy 等 OpenAI Compatible agent。
 
 **选模算法**（`PickCustomModel`）：
+
 1. **精确匹配** — upstream 模型名与 agent 默认模型名完全一致
 2. **关键字匹配** — upstream 模型名包含 agent 关键字（如 `codex`、`claude`）
 3. **兜底** — 取 upstream 列表首个模型
@@ -521,12 +543,12 @@ flowchart LR
 
 **映射算法**（`ComputeRedirectMappings`，4 步）：
 
-| 步骤 | 策略 | 说明 |
-|------|------|------|
-| 1 | 关键字匹配 | agent 名（如 `kimi`）子串匹配 upstream 模型名 |
-| 2 | 默认模型匹配 | 默认模型名关键词在 upstream 中查找 |
-| 3 | 多模型轮询 | 多原生模型 agent 尽量分配不同 upstream 模型 |
-| 4 | 兜底 | 取首个 upstream 模型 |
+| 步骤 | 策略     | 说明                                 |
+| -- | ------ | ---------------------------------- |
+| 1  | 关键字匹配  | agent 名（如 `kimi`）子串匹配 upstream 模型名 |
+| 2  | 默认模型匹配 | 默认模型名关键词在 upstream 中查找             |
+| 3  | 多模型轮询  | 多原生模型 agent 尽量分配不同 upstream 模型     |
+| 4  | 兜底     | 取首个 upstream 模型                    |
 
 映射结果持久化到 `proxy_model_mappings` 表（`proxy_id` + `agent_name` + `native_model` → `upstream_model`）。
 
@@ -540,7 +562,7 @@ flowchart LR
 
 > 详细模型信息运行 `agent-nexus agent models` 查看。
 
----
+***
 
 ## 配置快照与版本化管理
 
@@ -555,16 +577,16 @@ graph TD
     S5 --> |回滚| S3
 ```
 
-| 命令 | 功能 |
-|------|------|
-| `conf backup` | 创建只读快照（推荐） |
-| `conf history` | 列出所有快照，显示分支、时间、提交信息、文件列表 |
+| 命令                          | 功能                           |
+| --------------------------- | ---------------------------- |
+| `conf backup`               | 创建只读快照（推荐）                   |
+| `conf history`              | 列出所有快照，显示分支、时间、提交信息、文件列表     |
 | `conf diff --old A --new B` | 对比两个快照的差异（新增 / 删除 / 修改 / 未变） |
-| `conf rollback -s <id>` | 恢复到指定快照，支持 `latest` |
-| `conf branch create <name>` | 创建新分支 |
-| `conf branch switch <name>` | 切换到指定分支 |
-| `conf branch list` | 列出所有分支 |
-| `conf branch show` | 显示当前分支信息 |
+| `conf rollback -s <id>`     | 恢复到指定快照，支持 `latest`          |
+| `conf branch create <name>` | 创建新分支                        |
+| `conf branch switch <name>` | 切换到指定分支                      |
+| `conf branch list`          | 列出所有分支                       |
+| `conf branch show`          | 显示当前分支信息                     |
 
 ### 快照存储结构
 
@@ -577,7 +599,7 @@ graph TD
     └── ...
 ```
 
----
+***
 
 ## 工作流程
 
@@ -604,7 +626,7 @@ sequenceDiagram
     Tool-->>User: 显示配置结果 + 模型映射表
 ```
 
----
+***
 
 ## 扩展新 Agent
 
@@ -631,7 +653,7 @@ writers: []ConfigWriter{
 },
 ```
 
----
+***
 
 ## 注意事项
 
@@ -643,7 +665,7 @@ writers: []ConfigWriter{
 - 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
 - **OpenClaude** 配置写入 `~/.openclaude-env` 文件（.env 格式），启动时需指定：`openclaude --provider-env-file ~/.openclaude-env`。也可设置系统环境变量 `CLAUDE_CODE_USE_OPENAI=1`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 后直接运行 `openclaude`
 
----
+***
 
 ## 常见问题
 
