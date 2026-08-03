@@ -21,7 +21,13 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+// isInteractive returns true when stdin/stdout are both connected to a terminal.
+func isInteractive() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
 
 var homeDir string
 var proxyURL string
@@ -706,8 +712,26 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 	}
 	fmt.Println()
 
-	// 自动保存到数据库
+	// 嗅探到模型后，询问用户是否保存到数据库
 	if result.ModelCount > 0 {
+		if !isInteractive() {
+			fmt.Println("ℹ 非交互式终端，跳过保存提示。可使用 db add 手动保存。")
+			return nil
+		}
+
+		fmt.Printf("成功嗅探到 %d 个模型。是否保存到数据库？(yes/no): ", result.ModelCount)
+		reader := bufio.NewReader(os.Stdin)
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("读取输入失败: %v\n", err)
+			return nil
+		}
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "yes" {
+			fmt.Println("已取消保存。")
+			return nil
+		}
+
 		dbPath := filepath.Join(userHomeDir(), ".agent-nexus", "proxies.db")
 		dir := filepath.Dir(dbPath)
 		if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
@@ -730,7 +754,7 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
 						fmt.Printf("⚠ 保存失败: %v\n", addErr)
 					} else {
-						fmt.Printf("✅ 已自动保存到数据库: %s\n", result.BaseURL)
+						fmt.Printf("✅ 已保存到数据库: %s\n", result.BaseURL)
 					}
 				}
 			}

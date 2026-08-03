@@ -47,7 +47,13 @@ agent-nexus agent list
 agent-nexus agent install codex
 agent-nexus agent install claude
 
-# 3. 嗅探 AI 网关并保存到 DB
+# 3. 嗅探 AI 网关并保存到 DB（探测模型并确认是否有效）
+agent-nexus proxy detect --url https://api.example.com/v1 --key sk-xxx
+
+# 3b. 或者自动检测本机代理（CCX Desktop / CC-Switch），自动保存
+agent-nexus proxy detect
+
+# 3c. 如需手动添加已知的网关记录
 agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 
 # 4. 统一配置所有已安装的 agent（自动备份 → 添加/映射模型 → 写入配置）
@@ -157,7 +163,7 @@ agent-nexus proxy check --all
 `db` 是底层存储操作，直接管理 SQLite 数据库中的 AI 网关信息和配置快照，一般作为手动应急手段使用，不推荐日常操作：
 
 ```powershell
-# 嗅探网关并保存到数据库
+# 手动添加网关记录（不验证连通性，不推荐作为首选）
 agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 
 # 列出 / 查询 / 查看记录
@@ -223,7 +229,7 @@ agent-nexus conf set --agent all
 - **CCX Desktop**（自动检测）：读取 `~\AppData\Roaming\ccx-desktop\.config\config.json` 和 `.env`，默认监听 `127.0.0.1:3688`
 - **CC-Switch**（自动检测）：读取 `~\AppData\Roaming\cc-switch\.config\config.json` 和 `.env`
 - **自定义代理**（手动）：通过 `--url` + `--key` 指定任意代理地址
-- **代理数据库**：通过 `db add` 嗅探并保存代理配置，供 `conf set --db auto` 复用
+- **代理数据库**：通过 `proxy detect` 嗅探并保存代理配置（推荐，可确认有效性）；或 `db add` 手动添加（不验证连通性）
 
 ## Proxy 命令速查
 
