@@ -112,32 +112,63 @@ agent-nexus agent update codex
 
 安装后运行 `agent-nexus agent discover` 确认已安装 agent 列表和配置状态。
 
-## Proxy 配置：添加 AI 网关到数据库
+## 命令设计原则
 
-`conf set --db auto` 需要从代理数据库中选取 AI 网关记录，因此在统一配置前，需先通过 `db` 命令将 AI 网关信息存入 SQLite 数据库：
+agent-nexus 按职责划分三类命令，各司其职：
+
+| 命令 | 职责 | 典型操作 |
+|------|------|---------|
+| **`proxy`** | 模型信息与嗅探 | 嗅探网关、检测代理、查询模型列表、检查有效性 |
+| **`conf`** | 配置管理 | 统一配置入口、备份、快照、回滚、分支 |
+| **`db`** | 存储层（底层） | 直接操作数据库，一般不通过代码调用 |
+
+`proxy` 和 `conf` 通过 `--db` flag 引用底层存储，通常用户无需直接操作 `db`。
+
+## Proxy 命令：AI 网关管理
+
+`proxy` 命令负责 AI 网关（proxy）的发现、嗅探和有效性检查。`conf set --db auto` 需要先有可用的网关记录，最常见的方式是运行 `proxy detect` 自动检测本机代理并保存：
 
 ```powershell
-# 嗅探并保存 AI 网关配置（自动检测消息格式和可用模型列表）
+# 自动检测本机代理（CCX Desktop / CC-Switch），嗅探模型并保存到数据库
+agent-nexus proxy detect
+
+# 探测指定 AI 网关
+agent-nexus proxy detect --url https://api.example.com/v1 --key sk-xxx
+
+# 从数据库读取已保存的网关模型列表
+agent-nexus proxy detect --db 1
+agent-nexus proxy detect --db all
+
+# 仅显示配置信息，不嗅探
+agent-nexus proxy detect --no-sniff
+
+# 显示模型路由表
+agent-nexus proxy route
+
+# 检查已保存代理是否仍然有效
+agent-nexus proxy check <id>
+agent-nexus proxy check --all
+```
+
+> 提示：`proxy detect` 嗅探成功后会自动保存到数据库，`conf set --db auto` 即可直接使用。
+
+## 存储层：`db` 命令
+
+`db` 是底层存储操作，直接管理 SQLite 数据库中的 AI 网关信息和配置快照，一般作为手动应急手段使用，不推荐日常操作：
+
+```powershell
+# 嗅探网关并保存到数据库
 agent-nexus db add -u https://api.example.com/v1 -k sk-xxx
 
-# 列出已保存的网关记录
+# 列出 / 查询 / 查看记录
 agent-nexus db list
-
-# 查看某条记录的详情（含完整 API Key 和模型列表）
-agent-nexus db show 1
-
-# 按 ID 或 URL 子串查询
 agent-nexus db query example.com
-
-# 验证某条记录是否仍然有效
-agent-nexus db check 1
-agent-nexus db check --all
+agent-nexus db show 1
 
 # 删除记录
 agent-nexus db rm 1
+agent-nexus db rm --all
 ```
-
-> 提示：`proxy detect` 嗅探成功后会自动保存到数据库，无需手动执行 `db add`。
 
 ## 统一配置入口：`conf set`
 
