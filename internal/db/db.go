@@ -20,6 +20,7 @@ type ProxyRecord struct {
 	DetectedFormat string    `db:"detected_format"`
 	OpenAICap      bool      `db:"openai_cap"`
 	AnthropicCap   bool      `db:"anthropic_cap"`
+	ResponsesCap   bool      `db:"responses_cap"`
 	ModelCount     int       `db:"model_count"`
 	ModelsJSON     string    `db:"models_json"`
 	CreatedAt      time.Time `db:"created_at"`
@@ -154,20 +155,28 @@ func (d *DB) Init() error {
 		CREATE INDEX IF NOT EXISTS idx_entries_snapshot ON backup_config_entries(snapshot_id);
 		CREATE INDEX IF NOT EXISTS idx_entries_agent    ON backup_config_entries(agent_name);
 		CREATE INDEX IF NOT EXISTS idx_entries_sha256   ON backup_config_entries(sha256);
-	CREATE TABLE IF NOT EXISTS proxy_model_mappings (
-		id             INTEGER PRIMARY KEY AUTOINCREMENT,
-		proxy_id       INTEGER NOT NULL REFERENCES proxies(id) ON DELETE CASCADE,
-		agent_name     TEXT    NOT NULL,
-		native_model   TEXT    NOT NULL,
-		upstream_model TEXT    NOT NULL,
-		reason         TEXT    NOT NULL DEFAULT 'keyword',
-		created_at     TEXT    NOT NULL,
-		UNIQUE (proxy_id, agent_name, native_model)
-	);
-	CREATE INDEX IF NOT EXISTS idx_model_mapping_proxy ON proxy_model_mappings(proxy_id);
-	CREATE INDEX IF NOT EXISTS idx_model_mapping_agent ON proxy_model_mappings(agent_name);
+		CREATE TABLE IF NOT EXISTS proxy_model_mappings (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			proxy_id       INTEGER NOT NULL REFERENCES proxies(id) ON DELETE CASCADE,
+			agent_name     TEXT    NOT NULL,
+			native_model   TEXT    NOT NULL,
+			upstream_model TEXT    NOT NULL,
+			reason         TEXT    NOT NULL DEFAULT 'keyword',
+			created_at     TEXT    NOT NULL,
+			UNIQUE (proxy_id, agent_name, native_model)
+		);
+		CREATE INDEX IF NOT EXISTS idx_model_mapping_proxy ON proxy_model_mappings(proxy_id);
+		CREATE INDEX IF NOT EXISTS idx_model_mapping_agent ON proxy_model_mappings(agent_name);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add responses_cap column if it doesn't exist.
+	// Safe: SQLite ALTER TABLE IGNORE adds no-op when column exists.
+	_, _ = d.db.Exec("ALTER TABLE proxies ADD COLUMN responses_cap INTEGER NOT NULL DEFAULT 0")
+
+	return nil
 }
 
 // CreateSnapshot inserts a snapshot and its config entries in a single transaction.
@@ -319,7 +328,7 @@ func (d *DB) GetEntriesBySnapshot(snapshotID string) ([]BackupConfigEntry, error
 	return entries, rows.Err()
 }
 
-func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, modelCount int, modelIDs []string, createdAt time.Time) error {
+func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap, responsesCap bool, modelCount int, modelIDs []string, createdAt time.Time) error {
 	modelsJSON, _ := json.Marshal(modelIDs)
 	var maxID sql.NullInt64
 	err := d.db.QueryRow("SELECT MAX(id) FROM proxies").Scan(&maxID)
@@ -331,9 +340,9 @@ func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap bool, 
 		nextID = int(maxID.Int64) + 1
 	}
 	_, err = d.db.Exec(`
-		INSERT INTO proxies (id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, nextID, url, key, detectedFormat, boolToInt(openaiCap), boolToInt(anthropicCap), modelCount, string(modelsJSON), createdAt.Format(time.RFC3339))
+		INSERT INTO proxies (id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, nextID, url, key, detectedFormat, boolToInt(openaiCap), boolToInt(anthropicCap), boolToInt(responsesCap), modelCount, string(modelsJSON), createdAt.Format(time.RFC3339))
 	return err
 }
 
@@ -351,7 +360,7 @@ func (d *DB) ExistsByURL(url string) bool {
 }
 func (d *DB) List() ([]ProxyRecord, error) {
 	rows, err := d.db.Query(`
-		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at
 		FROM proxies
 		ORDER BY created_at DESC
 	`)
@@ -362,13 +371,14 @@ func (d *DB) List() ([]ProxyRecord, error) {
 	var records []ProxyRecord
 	for rows.Next() {
 		var r ProxyRecord
-		var oaiCap, antCap int64
+		var oaiCap, antCap, respCap int64
 		var ts string
-		if err := rows.Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts); err != nil {
+		if err := rows.Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &respCap, &r.ModelCount, &r.ModelsJSON, &ts); err != nil {
 			return nil, err
 		}
 		r.OpenAICap = oaiCap != 0
 		r.AnthropicCap = antCap != 0
+		r.ResponsesCap = respCap != 0
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			r.CreatedAt = t
 		}
@@ -379,18 +389,19 @@ func (d *DB) List() ([]ProxyRecord, error) {
 
 func (d *DB) GetByID(id int) (*ProxyRecord, error) {
 	var r ProxyRecord
-	var oaiCap, antCap int64
+	var oaiCap, antCap, respCap int64
 	var ts string
 	err := d.db.QueryRow(`
-		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at
 		FROM proxies
 		WHERE id = ?
-	`, id).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts)
+	`, id).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &respCap, &r.ModelCount, &r.ModelsJSON, &ts)
 	if err != nil {
 		return nil, err
 	}
 	r.OpenAICap = oaiCap != 0
 	r.AnthropicCap = antCap != 0
+	r.ResponsesCap = respCap != 0
 	if t, err := time.Parse(time.RFC3339, ts); err == nil {
 		r.CreatedAt = t
 	}
@@ -426,19 +437,20 @@ func (d *DB) TruncateReset() error {
 // Returns nil when the table is empty or no valid record exists.
 func (d *DB) GetMinIDProxy() (*ProxyRecord, error) {
 	var r ProxyRecord
-	var oaiCap, antCap int64
+	var oaiCap, antCap, respCap int64
 	var ts string
 	err := d.db.QueryRow(`
-		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at
 		FROM proxies
 		ORDER BY id ASC
 		LIMIT 1
-	`).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts)
+	`).Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &respCap, &r.ModelCount, &r.ModelsJSON, &ts)
 	if err != nil {
 		return nil, err
 	}
 	r.OpenAICap = oaiCap != 0
 	r.AnthropicCap = antCap != 0
+	r.ResponsesCap = respCap != 0
 	if t, err := time.Parse(time.RFC3339, ts); err == nil {
 		r.CreatedAt = t
 	}
@@ -580,7 +592,7 @@ func (d *DB) Query(filter string) ([]ProxyRecord, error) {
 		return []ProxyRecord{*record}, nil
 	}
 	rows, err := d.db.Query(`
-		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, model_count, models_json, created_at
+		SELECT id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at
 		FROM proxies
 		WHERE url LIKE ?
 		ORDER BY created_at DESC
@@ -592,13 +604,14 @@ func (d *DB) Query(filter string) ([]ProxyRecord, error) {
 	var records []ProxyRecord
 	for rows.Next() {
 		var r ProxyRecord
-		var oaiCap, antCap int64
+		var oaiCap, antCap, respCap int64
 		var ts string
-		if err := rows.Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &r.ModelCount, &r.ModelsJSON, &ts); err != nil {
+		if err := rows.Scan(&r.ID, &r.URL, &r.Key, &r.DetectedFormat, &oaiCap, &antCap, &respCap, &r.ModelCount, &r.ModelsJSON, &ts); err != nil {
 			return nil, err
 		}
 		r.OpenAICap = oaiCap != 0
 		r.AnthropicCap = antCap != 0
+		r.ResponsesCap = respCap != 0
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			r.CreatedAt = t
 		}

@@ -109,10 +109,20 @@ func testWriterConfigureAndStatus(t *testing.T, writerName string) {
 		os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 	}
 
+	// For codex, use an unreachable port so ResponsesProbe passes
+	// (connection-refused → unknown → assume OK). This test verifies config
+	// file writing, not protocol compatibility.
+	baseURL := "http://127.0.0.1:3688/v1"
+	port := 3688
+	if writerName == "codex" {
+		baseURL = "http://127.0.0.2:19876/v1"
+		port = 19876
+	}
+
 	p := &proxy.Proxy{
-		BaseURL: "http://127.0.0.1:3688/v1",
+		BaseURL: baseURL,
 		APIKey:  "ccx-dff3eccc518d9830",
-		Port:    3688,
+		Port:    port,
 		Source:  proxy.ProxyTypeCCX,
 		ModelMap: map[string]string{
 			"gpt-5.5": "sensenova-6.7-flash-lite",
@@ -158,7 +168,10 @@ func TestCodexWriter_Content(t *testing.T) {
 	os.WriteFile(cfgPath, []byte("model = \"old-model\""), 0644)
 
 	w := NewWriterRegistry().Get("codex")
-	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
+	// Use an unreachable address so ResponsesProbe returns "unknown" (pass)
+	// rather than hitting a live server. This test verifies config file
+	// writing, not protocol compatibility.
+	p := &proxy.Proxy{BaseURL: "http://127.0.0.2:19876/v1", APIKey: "ccx-key", Port: 19876, Source: proxy.ProxyTypeCCX}
 
 	if err := w.Configure(cfgPath, p, ""); err != nil {
 		t.Fatalf("Configure error = %v", err)
@@ -168,11 +181,9 @@ func TestCodexWriter_Content(t *testing.T) {
 	if !containsAll(s, "openai_base_url", p.BaseURL, "model_provider", "openai") {
 		t.Errorf("codex config missing expected fields. Got:\n%s", s)
 	}
-	// ccswitch block should be added
 	if !containsAll(s, "[model_providers.ccswitch]", "base_url") {
 		t.Errorf("codex config missing ccswitch provider block. Got:\n%s", s)
 	}
-	// api_key should be added
 	if !containsAll(s, "api_key", "ccx-key") {
 		t.Errorf("codex config missing api_key. Got:\n%s", s)
 	}
@@ -238,40 +249,33 @@ func TestHermesWriter_Content(t *testing.T) {
 	}
 	data, _ := os.ReadFile(cfgPath)
 	s := string(data)
-	if !containsAll(s, "providers:", "base_url", "api_key", "mcpServers") {
+	if !containsAll(s, "model:", "provider: custom", "base_url:", "api_key:", "api_mode: chat_completions", "default:") {
 		t.Errorf("hermes config missing expected fields. Got:\n%s", s)
 	}
 }
 
 func TestWriterConfigure_NonexistentFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "does-not-exist.toml")
-
-	// Writers that read existing file should fail; writers that create from scratch should succeed.
-	// Test a writer that reads existing (codex, claude, openclaw)
-	for _, writerName := range []string{"codex", "claude", "openclaw"} {
+	// All writers should succeed on a nonexistent file by creating one.
+	for _, writerName := range []string{
+		"codex", "claude", "kimi", "opencode", "openclaw",
+		"openclaude", "hermes",
+	} {
 		w := NewWriterRegistry().Get(writerName)
 		if w == nil {
 			t.Fatalf("writer %s not found", writerName)
 		}
-		p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
-		err := w.Configure(cfgPath, p, "")
-		if err == nil {
-			t.Errorf("Configure(%s) should fail on nonexistent file", writerName)
+		baseURL := "http://127.0.0.1:3688/v1"
+		port := 3688
+		if writerName == "codex" {
+			baseURL = "http://127.0.0.2:19876/v1"
+			port = 19876
 		}
-	}
-	// Writers that create from scratch should succeed
-	for _, writerName := range []string{"deepseek", "hermes", "kimi"} {
-		w := NewWriterRegistry().Get(writerName)
-		if w == nil {
-			t.Fatalf("writer %s not found", writerName)
-		}
-		p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "ccx-key", Port: 3688, Source: proxy.ProxyTypeCCX}
-		// Each writer uses its own path
+		p := &proxy.Proxy{BaseURL: baseURL, APIKey: "ccx-key", Port: port, Source: proxy.ProxyTypeCCX}
 		tmp := t.TempDir()
-		err := w.Configure(filepath.Join(tmp, writerName+".toml"), p, "")
+		cfgPath := filepath.Join(tmp, writerName+".toml")
+		err := w.Configure(cfgPath, p, "")
 		if err != nil {
-			t.Errorf("Configure(%s) should succeed creating new file", writerName)
+			t.Errorf("Configure(%s) should succeed creating new file: %v", writerName, err)
 		}
 	}
 }

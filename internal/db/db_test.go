@@ -332,7 +332,7 @@ func TestExistsByURL(t *testing.T) {
 	}
 
 	// Insert a proxy (URL stored without normalisation)
-	if err := d.Add("http://example.com/v1", "key1", "OpenAI", true, false, 1, []string{"m1"}, time.Now()); err != nil {
+	if err := d.Add("http://example.com/v1", "key1", "OpenAI", true, false, false, 1, []string{"m1"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
