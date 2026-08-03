@@ -901,8 +901,9 @@ var rmAll bool
 var checkAll bool
 
 var proxySniffCmd = &cobra.Command{
-	Use:   "sniff",
-	Short: "[已弃用] 请使用 proxy detect --url <url> --key <key>",
+	Use:    "sniff",
+	Hidden: true,
+	Short:  "[已弃用] 请使用 proxy detect --url <url> --key <key>",
 	Long: `嗅探 LLM 提供商的 endpoint，自动检测其支持的消息格式和可用模型列表。
 
 [已弃用] 推荐使用统一入口:

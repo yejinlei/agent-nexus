@@ -207,8 +207,9 @@ DEPRECATED：旧的 --name / 位置参数 仍可工作，但请使用 --agents�
 // ---- PROXY MODELS ----
 
 var proxyModelsCmd = &cobra.Command{
-	Use:   "models --db <N|all>",
-	Short: "[已弃用] 请使用 proxy detect --db <N|all>",
+	Use:    "models --db <N|all>",
+	Hidden: true,
+	Short:  "[已弃用] 请使用 proxy detect --db <N|all>",
 	Long: `显示 AI 网关/厂家支持的大模型列表。
 
 [已弃用] 推荐使用统一入口:
