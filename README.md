@@ -97,6 +97,10 @@ agent-nexus [command]
 | hermes | CLI | ACP | 官方安装脚本 | 需代理路由映射 |
 | gemini | CLI | 无 | npm `@google/gemini-cli` | Google auth（OAuth/API key） |
 
+![Agent 运行界面一览](docs/agent-grid.png)
+
+**Agent 运行界面一览**（2×3 宫格：Claude、Hermes、Kimi、OpenClaude、OpenClaw、OpenCode）
+
 ## 安装 Agent 运行时
 
 agent-nexus 自带安装器，支持 npm、pip、官方下载页、GitHub release 等多种方式，根据平台（Windows/macOS/Linux）自动选择：
