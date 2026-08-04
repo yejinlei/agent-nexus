@@ -200,7 +200,7 @@ func TestConfRestore_Latest_WithSnapshot(t *testing.T) {
 
 	cfgPath := createTestConfigFile(destRoot, "test.toml", "original")
 
-	s, err := r.CreateSnapshot([]string{cfgPath}, "test", "main")
+	s, err := r.CreateSnapshot([]string{cfgPath}, "test", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot failed: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestConfRestore_PreRestoreSnapshotCreated(t *testing.T) {
 	r := versioning.NewRegistry(destRoot)
 
 	cfgPath := createTestConfigFile(destRoot, "test.toml", "original")
-	s, _ := r.CreateSnapshot([]string{cfgPath}, "before", "main")
+	s, _ := r.CreateSnapshot([]string{cfgPath}, "before", "main", "")
 
 	os.WriteFile(cfgPath, []byte("modified"), 0644)
 
@@ -258,7 +258,7 @@ func TestConfRestore_RollbackOnFailure(t *testing.T) {
 	destRoot := filepath.Join(tmpDir, ".codex", "backups")
 	r := versioning.NewRegistry(destRoot)
 
-	s, _ := r.CreateSnapshot([]string{filepath.Join(tmpDir, "nonexistent.toml")}, "test", "main")
+	s, _ := r.CreateSnapshot([]string{filepath.Join(tmpDir, "nonexistent.toml")}, "test", "main", "")
 
 	err := runConfRestore(runConfRestoreOpts{
 		snapshot: s.ID,
@@ -279,7 +279,7 @@ func TestConfRestore_AgentFilter(t *testing.T) {
 	r := versioning.NewRegistry(destRoot)
 
 	cfgPath := createTestConfigFile(destRoot, "test_codex.toml", "original")
-	s, _ := r.CreateSnapshot([]string{cfgPath}, "test", "main")
+	s, _ := r.CreateSnapshot([]string{cfgPath}, "test", "main", "")
 
 	err := runConfRestore(runConfRestoreOpts{
 		snapshot: s.ID,
@@ -324,7 +324,7 @@ func TestConfList_WithSnapshots(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		cfgPath := createTestConfigFile(destRoot, fmt.Sprintf("test%d.toml", i), fmt.Sprintf("data%d", i))
-		_, _ = r.CreateSnapshot([]string{cfgPath}, fmt.Sprintf("snapshot %d", i), "main")
+		_, _ = r.CreateSnapshot([]string{cfgPath}, fmt.Sprintf("snapshot %d", i), "main", "")
 	}
 
 	err := runConfList(runConfListOpts{})
@@ -371,7 +371,7 @@ func TestConfMigrate_Idempotent(t *testing.T) {
 	r := versioning.NewRegistry(destRoot)
 
 	cfgPath := createTestConfigFile(destRoot, "test.toml", "data")
-	s, _ := r.CreateSnapshot([]string{cfgPath}, "test", "main")
+	s, _ := r.CreateSnapshot([]string{cfgPath}, "test", "main", "")
 	_ = r.Save()
 	_ = s.ID
 
@@ -466,7 +466,7 @@ func TestVersioningCreateAndRestore(t *testing.T) {
 
 	cfgPath := createTestConfigFile(destRoot, "test.toml", "original")
 
-	s, err := r.CreateSnapshot([]string{cfgPath}, "before modification", "main")
+	s, err := r.CreateSnapshot([]string{cfgPath}, "before modification", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot failed: %v", err)
 	}
@@ -605,7 +605,7 @@ func TestEndToEnd_BackupSetRestore(t *testing.T) {
 
 	cfgPath := createTestConfigFile(destRoot, "codex_config.toml", "key = initial_value")
 
-	s1, err := r.CreateSnapshot([]string{cfgPath}, "initial backup", "main")
+	s1, err := r.CreateSnapshot([]string{cfgPath}, "initial backup", "main", "")
 	if err != nil {
 		t.Fatalf("initial backup failed: %v", err)
 	}
@@ -619,7 +619,7 @@ func TestEndToEnd_BackupSetRestore(t *testing.T) {
 	}
 	t.Log("Step 2: Config modified successfully")
 
-	s2, _ := r.CreateSnapshot([]string{cfgPath}, "post-set snapshot", "main")
+	s2, _ := r.CreateSnapshot([]string{cfgPath}, "post-set snapshot", "main", "")
 	t.Logf("Step 3: Post-change snapshot: %s", s2.ID)
 
 	_, _ = r.RestoreSnapshot(s1.ID)

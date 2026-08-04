@@ -6,7 +6,7 @@
 - **代理检测**：自动读取 CCX Desktop / CC-Switch 配置（URL、Key、模型映射表），也支持任意自定义代理；统一入口 `proxy detect` 同时支持嗅探和 DB 查询
 - **配置写入**：支持 `--url` / `--key` 全局选项，或从代理数据库（SQLite）选择
 - **自动备份**：配置生效前自动创建版本化快照（支持分支）
-- **统一配置入口**：`agent-nexus conf set --agent all` 完成完整流程
+- **统一配置入口**：`agent-nexus conf set --agent all --db auto` 完成完整流程
 - **模型路由**：三层模型重定向机制，匹配最佳后端
 - **版本化管理**：配置快照（snapshot）、分支（branch）、差异对比（diff）、回滚（restore）
 - **彩色输出**：终端彩色状态显示
@@ -365,8 +365,8 @@ agent-nexus conf set --agent all --db 2
 # 预览模式（不实际写入）
 agent-nexus conf set --agent all --db auto --dry-run
 
-# 不传 --db 则回退到自动检测代理（CCX Desktop / CC-Switch）
-agent-nexus conf set --agent all
+# --db 必选，不传会报错
+# agent-nexus conf set --agent all    # ❌ 必须传 --db
 
 # 全局选项 --url + --key 仍可用于跳过 DB 和自动检测
 agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
@@ -377,17 +377,16 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 | 参数                 | 说明                                              |
 | ------------------ | ----------------------------------------------- |
 | `--agent` / `-a`   | 指定 agent（逗号分隔），`all` 代表所有可配置 agent（默认 `all`）    |
-| `--db`             | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
+| `--db`             | AI 网关来源（必选）：`auto`=DB 中 id 最小记录，`<N>`=指定 id |
 | `--dry-run` / `-d` | 预览模式，不实际写入                                      |
 | `--url`            | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测）                    |
 | `--key`            | 全局选项，直接指定代理 API Key                             |
 
 #### 代理来源优先级（从高到低）
 
-1. `--url` + `--key` — 直接使用，跳过 DB 和自动检测
+1. `--url` + `--key` — 直接使用，跳过 DB
 2. `--db auto` — 从 `proxies.db` 选取 id 最小的记录
 3. `--db <N>` — 从 `proxies.db` 选取 id=N 的记录
-4. 自动检测 — `proxy.Detect()`（CCX Desktop / CC-Switch）
 
 #### 模型添加 vs 映射
 
@@ -413,66 +412,47 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 
 #### 自动备份
 
-配置写入前自动触发全量备份（`createAutoBackup`）：
+配置写入前自动为**所有已安装且可配置的 agent**创建全量快照（存 DB）：
 
-- 统一 UUID 关联 DB 与文件系统
-- DB 双写：`backup_snapshots` + `backup_config_entries`
-- 文件系统：`~/.codex/backups/snapshots/<UUID>/`
-- 所有备份可通过 `conf bak` / `conf backup` / `conf history` / `conf rollback` 管理
+- 快照带名称：通过 `--backup-name` 手动指定；留空自动用时间戳
+- 存储：DB 表 `backup_snapshots` + `backup_config_entries`
+- 查看：`agent-nexus conf list`（显示名称、时间、ID）
+- 恢复：`agent-nexus conf restore "<名称>"`
 
 ### conf backup
 
-创建指定 agent 配置文件的只读快照（推荐替代 `conf bak`）：
+手动备份 agent 配置文件，创建带名称的快照：
 
 ```powershell
-agent-nexus conf backup                          # 备份所有已安装且可配置的 agent
-agent-nexus conf backup --agents codex,claude    # 只备份指定 agent
-agent-nexus conf backup --dry-run                # 预览模式，不实际写入
-agent-nexus conf backup --branch staging -m "msg"  # 指定分支和提交信息
+agent-nexus conf backup --name "配置前备份" --agents all    # 备份所有，带名称
+agent-nexus conf backup --name "kimi备份" --agents kimi      # 备份指定 agent
+agent-nexus conf backup --dry-run                             # 预览模式，不实际写入
+agent-nexus conf backup --name "旧快照" --force               # 覆盖同名快照
 ```
 
 行为：
 
 - 只读快照，不写入任何配置
-- 同时写入数据库（`backup_snapshots` + `backup_config_entries`）和文件系统（`~/.codex/backups/snapshots/<id>/`）
+- 快照存到 DB（不再写入文件系统）
+- `--name` 给快照命名，`conf restore "名称"` 直接按名称恢复
 
-### conf history
+### conf list
 
-列出所有历史配置快照（版本历史）：
+列出所有配置快照，显示名称、ID、时间、分支：
 
 ```powershell
-agent-nexus conf history                                          # 显示所有快照
-agent-nexus conf history --branch main                            # 只显示主分支
+agent-nexus conf list                                      # 列出所有快照
+agent-nexus conf list --all                                # 显示所有（含隐藏）
 ```
 
-### conf diff
+### conf restore
 
-比较两个版本快照之间的配置变更，显示新增、删除和修改的文件：
-
-```powershell
-agent-nexus conf diff --old 2026-07-17_14-30-00 --new 2026-07-17_15-00-00
-agent-nexus conf diff --old latest --new 2026-07-17_14-30-00
-```
-
-### conf rollback
-
-从指定的历史快照恢复 agent 配置文件：
+按名称或 ID 恢复快照：
 
 ```powershell
-agent-nexus conf rollback -s 2026-07-17_14-30-00    # 恢复指定快照
-agent-nexus conf rollback -s latest                  # 恢复到最新快照
-```
-
-### conf branch
-
-管理配置快照的分支，类似 `git branch`：
-
-```powershell
-agent-nexus conf branch create production    # 创建生产分支
-agent-nexus conf branch switch production    # 切换到生产分支
-agent-nexus conf branch list                 # 列出所有分支
-agent-nexus conf branch show                 # 显示当前分支信息
-agent-nexus conf backup --branch production     # 在指定分支上创建快照
+agent-nexus conf restore "配置前备份"    # 按名称恢复（推荐）
+agent-nexus conf restore latest          # 恢复最新快照
+agent-nexus conf restore <UUID>          # 按 ID 恢复
 ```
 
 ### conf upstream-models（已弃用）
@@ -501,12 +481,15 @@ agent-nexus conf auto --agents all --dry-run
 | ----------------- | ----------------------- |
 | `agent configure` | `conf set`              |
 | `conf auto`       | `conf set`              |
-| `conf bak`        | `conf backup`           |
-| `conf show`       | `conf backup --message` |
+| `conf bak`        | `conf backup`           | 已隐藏 |
+| `conf show`       | `conf backup`           | 已隐藏 |
 | `conf upstream-models` | `proxy detect`       |
 | `proxy sniff`     | `proxy detect --url ... --key ...` |
 | `proxy models`    | `proxy detect --db ...` |
 | `proxy db *`      | `db *`                  |
+| `conf history`    | `conf list`             | 已隐藏 |
+| `conf rollback`   | `conf restore`          | 已隐藏 |
+| `conf branch`     | (低频，已隐藏)            | 已隐藏 |
 | `db check`        | `proxy check`           |
 
 ***
@@ -566,37 +549,29 @@ flowchart LR
 
 ## 配置快照与版本化管理
 
-agent-nexus 引入类似 Git 的配置版本管理系统，支持快照、分支、差异对比和回滚：
+agent-nexus 的配置快照系统支持命名快照、列表和按名称恢复，简化了配置管理的复杂度：
 
 ```mermaid
 graph TD
-    S1["快照 1<br/>(main)"] --> S2["快照 2<br/>(main)"]
-    S2 --> S3["快照 3<br/>(main)"]
-    S2 --> S4["快照 4<br/>(dev)"]
-    S3 --> S5["快照 5<br/>(main)"]
-    S5 --> |回滚| S3
+    A["conf set --agent all --db auto"] --> B["自动创建全量快照<br/>(存 DB, 带名称)"]
+    C["conf backup --name 我的备份"] --> D["手动创建快照<br/>(存 DB)"]
+    E["conf restore 我的备份"] --> F["按名称恢复配置"]
 ```
 
 | 命令                          | 功能                           |
 | --------------------------- | ---------------------------- |
-| `conf backup`               | 创建只读快照（推荐）                   |
-| `conf history`              | 列出所有快照，显示分支、时间、提交信息、文件列表     |
-| `conf diff --old A --new B` | 对比两个快照的差异（新增 / 删除 / 修改 / 未变） |
-| `conf rollback -s <id>`     | 恢复到指定快照，支持 `latest`          |
-| `conf branch create <name>` | 创建新分支                        |
-| `conf branch switch <name>` | 切换到指定分支                      |
-| `conf branch list`          | 列出所有分支                       |
-| `conf branch show`          | 显示当前分支信息                     |
+| `conf backup --name "xxx"`  | 创建带名称的快照（存 DB）              |
+| `conf list`                 | 列出所有快照，显示名称、时间、ID          |
+| `conf restore "xxx"`        | 按名称恢复（推荐），支持 `latest`        |
+| `conf migrate`              | 将旧 versioning.json 快照导入 DB        |
 
-### 快照存储结构
+### 快照存储
 
-```
-~/.codex/backups/
-├── versioning.json          # 元数据注册表（快照索引 + 分支信息）
-└── snapshots/
-    ├── 2026-07-17_14-30-00/  # 快照 1（原始备份文件）
-    ├── 2026-07-17_15-00-00/  # 快照 2
-    └── ...
+快照存储在嵌入式 SQLite 数据库（`~/.agent-nexus/proxies.db`）中：
+
+```sql
+backup_snapshots   — id, name, type, branch, message, created_at
+backup_config_entries — snapshot_id, agent_name, file_path, file_content, sha256, ...
 ```
 
 ***
@@ -608,15 +583,15 @@ sequenceDiagram
     participant User
     participant Tool as agent-nexus
     participant DB as 代理数据库<br/>(proxies.db)
-    participant FS as 文件系统/备份
+    participant DB2 as 备份数据库
 
     User->>Tool: agent-nexus conf set --agent all --db auto
     Tool->>DB: 选取 id 最小的 AI 网关记录
     DB-->>Tool: URL / Key / upstream 模型列表
     Tool->>FS: 扫描已安装的 agent
     FS-->>Tool: agent 列表 + 配置文件路径
-    Tool->>FS: createAutoBackup（DB + 文件系统双写）
-    FS-->>Tool: 备份 UUID
+    Tool->>DB: 创建全量快照（存 DB）
+    DB-->>Tool: 快照 UUID + 名称
     Tool->>Tool: 分类 agent（自定义模型 / 重定向模型）
     Tool->>Tool: 自定义模型 → PickCustomModel 选最优模型
     Tool->>Tool: 重定向模型 → ComputeRedirectMappings 构建映射
@@ -660,7 +635,7 @@ writers: []ConfigWriter{
 - CCX/Desktop 需保持运行（监听 `127.0.0.1:3688`），或使用 `--url` 指定自定义代理
 - Cursor 的字段名取决于版本，不匹配时需通过 Cursor 设置 UI 手动填入
 - **推荐**使用 `agent-nexus conf set` 作为统一配置入口
-- 配置快照存储于 `~/.codex/backups/`，使用 `agent-nexus conf history` 查看所有快照
+- 配置快照存储于 DB（`proxies.db`），使用 `agent-nexus conf list` 查看所有快照（显示名称）
 - 敏感信息（API Key）仅写入各 agent 自身配置文件，未扩散
 - 配置生效前所有原始配置文件均已备份并创建快照，可随时回滚
 - **OpenClaude** 配置写入 `~/.openclaude-env` 文件（.env 格式），启动时需指定：`openclaude --provider-env-file ~/.openclaude-env`。也可设置系统环境变量 `CLAUDE_CODE_USE_OPENAI=1`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 后直接运行 `openclaude`

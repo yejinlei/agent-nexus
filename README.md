@@ -197,8 +197,8 @@ agent-nexus conf set --agent all --db 2
 # 预览模式（不实际写入）
 agent-nexus conf set --agent all --db auto --dry-run
 
-# 不传 --db 则回退到自动检测代理（CCX Desktop / CC-Switch）
-agent-nexus conf set --agent all
+# --db 必选，不传会报错
+# agent-nexus conf set --agent all    # ❌ 不传 --db 将失败
 ```
 
 ### 参数说明
@@ -206,7 +206,7 @@ agent-nexus conf set --agent all
 | 参数 | 说明 |
 |------|------|
 | `--agent` | 指定 agent（逗号分隔），`all` 代表所有可配置 agent |
-| `--db` | AI 网关来源：`auto`=DB 中 id 最小记录，`<N>`=指定 id；留空则自动检测 |
+| `--db` | AI 网关来源（必选）：`auto`=DB 中 id 最小记录，`<N>`=指定 id |
 | `--dry-run` | 预览模式，不实际写入 |
 
 ### 模型添加 vs 映射
@@ -226,7 +226,12 @@ agent-nexus conf set --agent all
 
 ### 自动备份
 
-配置写入前自动触发全量备份（DB + 文件系统双写），可通过 `conf bak` 管理所有备份。
+配置写入前自动为**所有已安装且可配置的 agent**创建全量快照（存 DB）：
+
+- 快照带名称：`--backup-name "切换 gpt-5.5"` 手动命名；留空自动用时间戳
+- 快照存储：DB 表 `backup_snapshots` + `backup_config_entries`
+- 查看快照：`agent-nexus conf list`（显示名称、时间、ID）
+- 恢复快照：`agent-nexus conf restore "<快照名称>"`
 
 ## 代理支持
 
@@ -271,25 +276,18 @@ agent-nexus db rm     --all                # 清空所有记录
 类 Git 的配置快照系统，支持快照、分支、差异对比和回滚：
 
 ```
-agent-nexus conf backup           # 创建只读快照（推荐替代 conf bak）
-agent-nexus conf backup --dry-run # 预览将被备份的文件
-agent-nexus conf history          # 列出所有快照
-agent-nexus conf diff --old 1 --new 2  # 对比两个快照
-agent-nexus conf rollback -s latest    # 回滚到最新快照
-agent-nexus conf branch list            # 列出分支
+agent-nexus conf backup --name "我的快照" --agents all    # 手动备份，带名称
+agent-nexus conf backup --name "测试" --agents codex      # 备份指定 agent
+agent-nexus conf list                                      # 列出所有快照（显示名称）
+agent-nexus conf restore "我的快照"                        # 按名称恢复
+agent-nexus conf restore latest                            # 恢复最新快照
+agent-nexus conf restore <UUID>                            # 按 ID 恢复
+agent-nexus conf backup --name "我的快照" --force          # 覆盖同名快照
 ```
 
-快照存储结构：
+快照命名：`conf backup --name "xxx"` 给快照起个人类可读的名称，`conf restore "xxx"` 直接按名称恢复，不用记 UUID。留空时自动用时间戳。
 
-```
-~/.codex/backups/
-├── versioning.json                 # 元数据注册表（快照索引 + 分支信息）
-└── snapshots/
-    ├── 2026-07-17_14-30-00/        # 快照 1（原始备份文件）
-    └── ...
-```
-
-> 旧命令 `conf bak`、`conf show` 仍可用，但已弃用，请迁移到 `conf backup`。
+> 旧命令 `conf bak`、`conf show`、`conf history`、`conf rollback` 已隐藏，请迁移到 `conf backup` / `conf list` / `conf restore`。
 
 ## 查看模型信息
 
