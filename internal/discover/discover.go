@@ -215,7 +215,7 @@ var registry = AgentRegistry{
 		{Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, BinaryName: "openclaw", IsConfigurable: true},
 		{Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude.json", ".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
 		{Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{"AppData/Local/hermes/config.yaml", ".hermes/config.yaml"}, BinaryName: "hermes", IsConfigurable: true},
-		{Name: "gemini", Category: "cli", Protocol: ProtocolGemini, HomeDirFiles: []string{".gemini/settings.json", ".gemini/.env"}, BinaryName: "gemini", IsConfigurable: true},
+		{Name: "gemini", Category: "cli", Protocol: ProtocolGemini, HomeDirFiles: []string{".gemini/config.json", ".gemini/settings.json", ".gemini/.env"}, BinaryName: "gemini", IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
 	},
 }
 

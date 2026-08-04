@@ -279,9 +279,7 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	} else if len(msgsResp) > 0 {
 		var mr MessagesResponse
 		if err := json.Unmarshal(msgsResp, &mr); err == nil && mr.ID != "" {
-			_ = mr
 			result.Caps = append(result.Caps, ProtocolCap{Label: "💬 Anthropic Messages"})
-			_ = mr
 			result.DetectedFormat += " + Anthropic Messages"
 		} else {
 			notes = append(notes, fmt.Sprintf("Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120)))
@@ -335,7 +333,6 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		if result.Notes == "" {
 			result.Notes = "未从该 endpoint 探测到可用模型，可能是自定义格式或需要特殊认证"
 		} else if !strings.Contains(result.Notes, "未探测到") {
-			_ = mr
 			result.Notes += "; 未探测到标准格式"
 		}
 	}
