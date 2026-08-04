@@ -29,6 +29,7 @@ type ProxyRecord struct {
 // BackupSnapshot represents a point-in-time backup of agent configs.
 type BackupSnapshot struct {
 	ID        string `db:"id"`
+	Name      string `db:"name"`
 	Type      string `db:"type"`
 	AgentName string `db:"agent_name"`
 	Branch    string `db:"branch"`
@@ -176,6 +177,11 @@ func (d *DB) Init() error {
 	// Safe: SQLite ALTER TABLE IGNORE adds no-op when column exists.
 	_, _ = d.db.Exec("ALTER TABLE proxies ADD COLUMN responses_cap INTEGER NOT NULL DEFAULT 0")
 
+	// Migration: add name column (human-readable label) to backup_snapshots.
+	// name is unique when non-NULL so a label always resolves to one snapshot.
+	_, _ = d.db.Exec("ALTER TABLE backup_snapshots ADD COLUMN name TEXT")
+	_, _ = d.db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshot_name ON backup_snapshots(name) WHERE name IS NOT NULL AND name <> ''")
+
 	return nil
 }
 
@@ -188,9 +194,9 @@ func (d *DB) CreateSnapshot(snapshot *BackupSnapshot, entries []BackupConfigEntr
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.Exec(`
-		INSERT INTO backup_snapshots (id, type, agent_name, branch, message, created_at, proxy_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, snapshot.ID, snapshot.Type, snapshot.AgentName, snapshot.Branch, snapshot.Message, snapshot.CreatedAt, snapshot.ProxyID)
+		INSERT INTO backup_snapshots (id, name, type, agent_name, branch, message, created_at, proxy_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, snapshot.ID, snapshot.Name, snapshot.Type, snapshot.AgentName, snapshot.Branch, snapshot.Message, snapshot.CreatedAt, snapshot.ProxyID)
 	if err != nil {
 		return fmt.Errorf("insert snapshot: %w", err)
 	}
@@ -209,9 +215,10 @@ func (d *DB) CreateSnapshot(snapshot *BackupSnapshot, entries []BackupConfigEntr
 }
 
 // CreateSnapshotAutoID generates a UUID snapshot ID and creates the snapshot+entries atomically.
-func (d *DB) CreateSnapshotAutoID(snapshotType, agentName, branch, message string, proxyID *int, entries []BackupConfigEntry) (string, error) {
+func (d *DB) CreateSnapshotAutoID(snapshotType, agentName, branch, message, name string, proxyID *int, entries []BackupConfigEntry) (string, error) {
 	snapshot := &BackupSnapshot{
 		ID:        uuid.New().String(),
+		Name:      name,
 		Type:      snapshotType,
 		AgentName: agentName,
 		Branch:    branch,
@@ -232,10 +239,30 @@ func (d *DB) GetSnapshot(id string) (*BackupSnapshot, error) {
 	var s BackupSnapshot
 	var proxyID sql.NullInt64
 	err := d.db.QueryRow(`
-		SELECT id, type, agent_name, branch, message, created_at, proxy_id
+		SELECT id, name, type, agent_name, branch, message, created_at, proxy_id
 		FROM backup_snapshots
 		WHERE id = ?
-	`, id).Scan(&s.ID, &s.Type, &s.AgentName, &s.Branch, &s.Message, &s.CreatedAt, &proxyID)
+	`, id).Scan(&s.ID, &s.Name, &s.Type, &s.AgentName, &s.Branch, &s.Message, &s.CreatedAt, &proxyID)
+	if err != nil {
+		return nil, err
+	}
+	if proxyID.Valid {
+		i := int(proxyID.Int64)
+		s.ProxyID = &i
+	}
+	return &s, nil
+}
+
+// GetSnapshotByName returns a snapshot by its human-readable name, or
+// sql.ErrNoRows when no snapshot with that name exists.
+func (d *DB) GetSnapshotByName(name string) (*BackupSnapshot, error) {
+	var s BackupSnapshot
+	var proxyID sql.NullInt64
+	err := d.db.QueryRow(`
+		SELECT id, name, type, agent_name, branch, message, created_at, proxy_id
+		FROM backup_snapshots
+		WHERE name = ?
+	`, name).Scan(&s.ID, &s.Name, &s.Type, &s.AgentName, &s.Branch, &s.Message, &s.CreatedAt, &proxyID)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +276,7 @@ func (d *DB) GetSnapshot(id string) (*BackupSnapshot, error) {
 // ListSnapshots returns all snapshots ordered by created_at descending.
 func (d *DB) ListSnapshots() ([]BackupSnapshot, error) {
 	rows, err := d.db.Query(`
-		SELECT id, type, agent_name, branch, message, created_at, proxy_id
+		SELECT id, name, type, agent_name, branch, message, created_at, proxy_id
 		FROM backup_snapshots
 		ORDER BY created_at DESC
 	`)
@@ -261,7 +288,7 @@ func (d *DB) ListSnapshots() ([]BackupSnapshot, error) {
 	for rows.Next() {
 		var s BackupSnapshot
 		var proxyID sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.Type, &s.AgentName, &s.Branch, &s.Message, &s.CreatedAt, &proxyID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.Type, &s.AgentName, &s.Branch, &s.Message, &s.CreatedAt, &proxyID); err != nil {
 			return nil, err
 		}
 		if proxyID.Valid {

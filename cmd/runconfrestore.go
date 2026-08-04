@@ -85,18 +85,51 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
         targetID = args[0]
     }
     if targetID == "" {
-        return fmt.Errorf("请指定快照 ID")
+        return fmt.Errorf("请指定快照 ID 或名称")
     }
 
     r := versioning.LoadRegistry(destRoot)
 
     if strings.EqualFold(targetID, "latest") {
-        latest := r.LatestSnapshot()
-        if latest == nil {
-            return fmt.Errorf("未找到任何快照")
+        // Try to find the latest DB snapshot first; fall back to filesystem.
+        dbInst, dbErr := db.New()
+        var latestDB *db.BackupSnapshot
+        if dbErr == nil {
+            if initErr := dbInst.Init(); initErr == nil {
+                dbSnaps, _ := dbInst.ListSnapshots()
+                if len(dbSnaps) > 0 {
+                    latestDB = &dbSnaps[0]
+                }
+                dbInst.Close()
+            }
         }
-        targetID = latest.ID
-        fmt.Printf("自动选择最新快照: %s\n", targetID)
+        if latestDB != nil {
+            targetID = latestDB.ID
+            fmt.Printf("自动选择最新快照（DB）: %s\n", targetID)
+        } else {
+            latest := r.LatestSnapshot()
+            if latest == nil {
+                return fmt.Errorf("未找到任何快照")
+            }
+            targetID = latest.ID
+            fmt.Printf("自动选择最新快照（文件系统）: %s\n", targetID)
+        }
+    }
+
+    // If targetID doesn't look like a snapshot ID (no UUID, no timestamp format),
+    // try to resolve it as a human-readable name from the DB.
+    if !strings.Contains(targetID, "-") {
+        dbInst, dbErr := db.New()
+        if dbErr == nil {
+            if initErr := dbInst.Init(); initErr == nil {
+                dbSnap, snapErr := dbInst.GetSnapshotByName(targetID)
+                if snapErr == nil && dbSnap != nil {
+                    fmt.Printf("按名称匹配快照: %s → %s\n", dbSnap.Name, dbSnap.ID)
+                    targetID = dbSnap.ID
+                }
+                dbInst.Close()
+            }
+        }
     }
 
     s := r.GetSnapshot(targetID)
@@ -129,7 +162,7 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
     }
 
     fmt.Println("创建预恢复快照（恢复前当前文件内容，用于失败回滚）...")
-    preSnap, err := r.CreateSnapshot(configPaths, preRestoreMessage, opts.branch)
+    preSnap, err := r.CreateSnapshot(configPaths, preRestoreMessage, opts.branch, "")
     if err != nil {
         fmt.Printf("  [WARNING] 创建预恢复快照失败: %v\n", err)
     } else {
@@ -178,6 +211,7 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
             "ALL",
             opts.branch,
             fmt.Sprintf("恢复快照: conf restore %s", targetID),
+            fmt.Sprintf("pre-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
             nil,
             nil,
         )

@@ -152,7 +152,7 @@ func TestCreateSnapshotAutoID(t *testing.T) {
 	defer cleanup()
 	d.Init()
 
-	id, err := d.CreateSnapshotAutoID("global", "", "main", "auto id test", nil, []BackupConfigEntry{
+	id, err := d.CreateSnapshotAutoID("global", "", "main", "auto id test", "", nil, []BackupConfigEntry{
 		{AgentName: "agent-x", FilePath: "/x", FileBasename: "x", SHA256: "h1", FileSize: 1, FileContent: "x"},
 	})
 	if err != nil {

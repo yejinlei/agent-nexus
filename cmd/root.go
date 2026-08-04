@@ -1013,7 +1013,7 @@ var confBakCmd = &cobra.Command{
 		}
 
 		r := versioning.LoadRegistry(destRoot)
-		s, err := r.CreateSnapshot(paths, backupMessage, backupBranch)
+		s, err := r.CreateSnapshot(paths, backupMessage, backupBranch, "")
 		if err != nil {
 			fmt.Printf("创建快照失败: %v\n", err)
 			return err
@@ -1128,7 +1128,7 @@ var confShowCmd = &cobra.Command{
 		}
 
 		r := versioning.LoadRegistry(destRoot)
-		s, err := r.CreateSnapshot(paths, snapshotMessage, snapshotBranch)
+		s, err := r.CreateSnapshot(paths, snapshotMessage, snapshotBranch, "")
 		if err != nil {
 			fmt.Printf("创建快照失败: %v\n", err)
 			return err
@@ -1407,6 +1407,19 @@ func initConfCmd() {
 	confCmd.AddCommand(confAutoCmd)
 
 	initConfUpstreamModels()
+	initConfListCmd()
+	initConfRestoreCmd()
+	initConfMigrateCmd()
+	confCmd.AddCommand(confListCmd)
+	confCmd.AddCommand(confRestoreCmd)
+	confCmd.AddCommand(confMigrateCmd)
+	// Hide deprecated/low-frequency commands
+	confBakCmd.Hidden = true
+	confShowCmd.Hidden = true
+	confHistoryCmd.Hidden = true
+	confRollbackCmd.Hidden = true
+	confDiffCmd.Hidden = true
+	confBranchCmd.Hidden = true
 }
 
 // ========== INIT ==========

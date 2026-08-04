@@ -19,6 +19,8 @@ type runConfBackupOpts struct {
 	branch  string
 	message string
 	dryRun  bool
+	name    string
+	force   bool
 }
 
 var confBackupCmd = &cobra.Command{
@@ -29,8 +31,10 @@ var confBackupCmd = &cobra.Command{
 
 行为：
 - 只读快照，不写入任何配置
-- 写入 DB（backup_snapshots + backup_config_entries）和文件系统（~/.codex/backups/snapshots/<id>/）
-- 使用统一 UUID 快照 ID，DB 与文件系统互相可追溯
+- 写入 DB（backup_snapshots + backup_config_entries）
+- 使用统一 UUID 快照 ID
+- --name 给快照命名，恢复时按名称定位
+- --force 允许覆盖同名快照
 - --dry-run 预览模式，仅列出将被备份的文件及 SHA256，不实际写入
 
 --agents:
@@ -48,6 +52,8 @@ var confBackupCmd = &cobra.Command{
 			branch:  cbBranch,
 			message: cbMessage,
 			dryRun:  cbDryRun,
+			name:    cbName,
+			force:   cbForce,
 		}
 		return runConfBackup(opts)
 	},
@@ -58,6 +64,8 @@ var (
 	cbBranch  string
 	cbMessage string
 	cbDryRun  bool
+	cbName    string
+	cbForce   bool
 )
 
 func initConfBackupCmd() {
@@ -66,14 +74,13 @@ func initConfBackupCmd() {
 	bpFlags.StringVarP(&cbBranch, "branch", "b", "main", "快照所属分支名称")
 	bpFlags.StringVarP(&cbMessage, "message", "m", "", "快照提交信息")
 	bpFlags.BoolVarP(&cbDryRun, "dry-run", "d", false, "预览模式，不实际写入")
+	bpFlags.StringVar(&cbName, "name", "", "快照名称（人类可读，恢复时用此名称定位）")
+	bpFlags.BoolVar(&cbForce, "force", false, "允许覆盖同名快照")
 }
 
 // runConfBackup creates a read-only snapshot of selected agent configs,
 // writing to both the DB and the filesystem under a single UUID snapshot ID.
 func runConfBackup(opts runConfBackupOpts) error {
-	home := userHomeDir()
-	destRoot := filepath.Join(home, ".codex", "backups")
-
 	fmt.Println("[1/4] 扫描已安装 agent...")
 	allAgents := discover.Discover()
 	fmt.Printf("  发现 %d 个 agent\n", len(allAgents))
@@ -151,6 +158,12 @@ func runConfBackup(opts runConfBackupOpts) error {
 		snapshotMessage = fmt.Sprintf("备份快照: conf backup --agents %s", opts.agents)
 	}
 
+	snapshotName := opts.name
+	if snapshotName == "" {
+		snapshotName = fmt.Sprintf("snapshot-%s", time.Now().Format("2006-01-02_15-04-05"))
+		fmt.Printf("  自动快照名称: %s\n", snapshotName)
+	}
+
 	fmt.Println("[3/4] 备份预览:")
 	fmt.Println(strings.Repeat("-", 60))
 	for _, f := range bf {
@@ -176,7 +189,10 @@ func runConfBackup(opts runConfBackupOpts) error {
 		fmt.Printf("\n[预览模式 --dry-run]")
 		fmt.Printf("\n快照将写入:\n")
 		fmt.Printf("  数据库: backup_snapshots + backup_config_entries\n")
-		fmt.Printf("  文件系统: %s/snapshots/<id>/\n", destRoot)
+		fmt.Printf("  数据库: backup_snapshots + backup_config_entries\n")
+		if opts.name != "" {
+			fmt.Printf("  快照名称: %s\n", opts.name)
+		}
 		fmt.Printf("\n运行不带 --dry-run 以实际备份\n")
 		return nil
 	}
@@ -184,14 +200,26 @@ func runConfBackup(opts runConfBackupOpts) error {
 	fmt.Println()
 	fmt.Println("[4/4] 写入快照...")
 
-	// Unified snapshot ID source: the UUID returned by the DB write.
-	// The filesystem snapshot dir uses the same UUID, keeping DB and
-	// filesystem linked by a single ID.
-
 	dbInst, dbErr := db.New()
 	if dbErr != nil {
-		fmt.Printf("  [WARNING] 数据库不可用: %v\n", dbErr)
-		fmt.Println("  将继续写入文件系统备份")
+		return fmt.Errorf("数据库不可用（%v），请检查后重试", dbErr)
+	}
+	defer dbInst.Close()
+	if err := dbInst.Init(); err != nil {
+		return fmt.Errorf("数据库初始化失败: %w", err)
+	}
+
+	// Check name overlap: if name is non-empty and an existing snapshot uses it.
+	if snapshotName != "" {
+		existing, _ := dbInst.GetSnapshotByName(snapshotName)
+		if existing != nil {
+			if opts.force {
+				fmt.Printf("  覆盖同名快照: %s -> %s\\n", existing.Name, existing.ID)
+				_ = dbInst.DeleteSnapshot(existing.ID)
+			} else {
+				return fmt.Errorf("已存在同名快照: %s（使用 --force 覆盖）", snapshotName)
+			}
+		}
 	}
 
 	// Global snapshots get agentName="ALL"; per-agent gets the real agent name.
@@ -205,63 +233,26 @@ func runConfBackup(opts runConfBackupOpts) error {
 		}
 	}
 
-	var snapshotUUID string
-	if dbErr == nil {
-		defer dbInst.Close()
-		_ = dbInst.Init()
-		var entries []db.BackupConfigEntry
-		for _, f := range bf {
-			entries = append(entries, db.BackupConfigEntry{
-				SnapshotID:   "", // filled by CreateSnapshotAutoID
-				AgentName:    f.agentName,
-				FilePath:     f.path,
-				FileBasename: f.basename,
-				SHA256:       f.sha256,
-				FileSize:     len(f.content),
-				FileContent:  string(f.content),
-				ModTime:      f.modTime,
-				Error:        f.error,
-			})
-		}
-		var err error
-		snapshotUUID, err = dbInst.CreateSnapshotAutoID(snapshotType, agentNameArg, opts.branch, snapshotMessage, nil, entries)
-		if err != nil {
-			fmt.Printf("  [WARNING] 写入数据库失败: %v\n", err)
-		} else {
-			fmt.Printf("  数据库快照: %s (分支: %s, 类型: %s)\n", snapshotUUID, opts.branch, snapshotType)
-		}
+	var entries []db.BackupConfigEntry
+	for _, f := range bf {
+		entries = append(entries, db.BackupConfigEntry{
+			SnapshotID:   "",
+			AgentName:    f.agentName,
+			FilePath:     f.path,
+			FileBasename: f.basename,
+			SHA256:       f.sha256,
+			FileSize:     len(f.content),
+			FileContent:  string(f.content),
+			ModTime:      f.modTime,
+			Error:        f.error,
+		})
 	}
-
-	// Fallback to timestamp ID when DB is unavailable.
-	if snapshotUUID == "" {
-		snapshotUUID = time.Now().Format("2006-01-02_15-04-05.000000")
+	snapshotUUID, err := dbInst.CreateSnapshotAutoID(snapshotType, agentNameArg, opts.branch, snapshotMessage, snapshotName, nil, entries)
+	if err != nil {
+		return fmt.Errorf("写入数据库失败: %w", err)
 	}
-
-	snapshotDir := filepath.Join(destRoot, "snapshots", snapshotUUID)
-	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
-		fmt.Printf("  [WARNING] 创建文件系统备份目录失败: %v\n", err)
-	} else {
-		written := 0
-		for _, f := range bf {
-			if f.error != "" || len(f.content) == 0 {
-				continue
-			}
-			dst := filepath.Join(snapshotDir, f.agentName+"_"+f.basename)
-			if err := os.WriteFile(dst, f.content, 0644); err != nil {
-				fmt.Printf("  [WARNING] 写入文件失败: %s: %v\n", f.basename, err)
-			} else {
-				written++
-			}
-		}
-		fmt.Printf("  文件系统快照: %s (%d 个文件)\n", snapshotDir, written)
-	}
-
-	// Removed: redundant backup.Backup() third write.
-	// The same data was being written a third time to
-	// ~/.codex/backups/agent-configs-<timestamp>/ with a separate
-	// timestamp-based ID, producing orphaned data not linkable to the
-	// UUID-snapshot in DB or filesystem.  DB + filesystem under one
-	// UUID now forms the two consistent copies.
+	fmt.Printf("  快照名称: %s\n", snapshotName)
+	fmt.Printf("  数据库快照: %s (分支: %s, 类型: %s)\n", snapshotUUID, opts.branch, snapshotType)
 
 	successCount := 0
 	failCount := 0

@@ -105,7 +105,7 @@ func TestCreateSnapshot_HappyPath(t *testing.T) {
 	s, err := r.CreateSnapshot([]string{
 		filepath.Join(cfgDir, "a.toml"),
 		filepath.Join(cfgDir, "b.json"),
-	}, "test snapshot", "main")
+	}, "test snapshot", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCreateSnapshot_MissingFile(t *testing.T) {
 	r := NewRegistry(tmpDir)
 	s, err := r.CreateSnapshot([]string{
 		filepath.Join(tmpDir, "nonexistent.toml"),
-	}, "error test", "main")
+	}, "error test", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -159,7 +159,7 @@ func TestCreateSnapshot_MissingFile(t *testing.T) {
 func TestCreateSnapshot_NewBranch(t *testing.T) {
 	tmpDir := t.TempDir()
 	r := NewRegistry(tmpDir)
-	_, err := r.CreateSnapshot([]string{}, "new branch test", "dev")
+	_, err := r.CreateSnapshot([]string{}, "new branch test", "dev", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCreateSnapshot_NewBranch(t *testing.T) {
 func TestCreateSnapshot_DefaultBranch(t *testing.T) {
 	tmpDir := t.TempDir()
 	r := NewRegistry(tmpDir)
-	s, err := r.CreateSnapshot([]string{}, "default branch", "")
+	s, err := r.CreateSnapshot([]string{}, "default branch", "", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -187,7 +187,7 @@ func TestCreateSnapshot_BackupFileWritten(t *testing.T) {
 	os.WriteFile(filepath.Join(cfgDir, "a.toml"), []byte("data"), 0644)
 	r := NewRegistry(tmpDir)
 
-	s, err := r.CreateSnapshot([]string{filepath.Join(cfgDir, "a.toml")}, "test", "main")
+	s, err := r.CreateSnapshot([]string{filepath.Join(cfgDir, "a.toml")}, "test", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -204,11 +204,11 @@ func TestListSnapshots(t *testing.T) {
 	r := NewRegistry(tmpDir)
 
 	// Create 3 snapshots with slight delays to ensure ordering
-	s1, _ := r.CreateSnapshot([]string{}, "first", "main")
+	s1, _ := r.CreateSnapshot([]string{}, "first", "main", "")
 	time.Sleep(10 * time.Millisecond)
-	s2, _ := r.CreateSnapshot([]string{}, "second", "main")
+	s2, _ := r.CreateSnapshot([]string{}, "second", "main", "")
 	time.Sleep(10 * time.Millisecond)
-	s3, _ := r.CreateSnapshot([]string{}, "third", "main")
+	s3, _ := r.CreateSnapshot([]string{}, "third", "main", "")
 
 	list := r.ListSnapshots()
 	if len(list) != 3 {
@@ -229,7 +229,7 @@ func TestListSnapshots(t *testing.T) {
 func TestGetSnapshot(t *testing.T) {
 	tmpDir := t.TempDir()
 	r := NewRegistry(tmpDir)
-	s, _ := r.CreateSnapshot([]string{}, "test", "main")
+	s, _ := r.CreateSnapshot([]string{}, "test", "main", "")
 	got := r.GetSnapshot(s.ID)
 	if got == nil {
 		t.Fatal("GetSnapshot returned nil for existing snapshot")
@@ -253,7 +253,7 @@ func TestLatestSnapshot(t *testing.T) {
 		t.Error("LatestSnapshot on empty registry should return nil")
 	}
 
-	s, _ := r.CreateSnapshot([]string{}, "only", "main")
+	s, _ := r.CreateSnapshot([]string{}, "only", "main", "")
 	latest := r.LatestSnapshot()
 	if latest == nil {
 		t.Fatal("LatestSnapshot returned nil")
@@ -273,7 +273,7 @@ func TestRestoreSnapshot(t *testing.T) {
 	os.WriteFile(original, []byte("original"), 0644)
 
 	r := NewRegistry(tmpDir)
-	s, err := r.CreateSnapshot([]string{original}, "before change", "main")
+	s, err := r.CreateSnapshot([]string{original}, "before change", "main", "")
 	if err != nil {
 		t.Fatalf("CreateSnapshot() error = %v", err)
 	}
@@ -344,7 +344,7 @@ func TestSnapshotDiff_AllStatuses(t *testing.T) {
 	s1, _ := r.CreateSnapshot([]string{
 		filepath.Join(cfgDir, "old.txt"),
 		filepath.Join(cfgDir, "shared.txt"),
-	}, "old", "main")
+	}, "old", "main", "")
 
 	// After snapshot: delete old.txt, modify shared.txt, add new.txt
 	os.Remove(filepath.Join(cfgDir, "old.txt"))
@@ -356,7 +356,7 @@ func TestSnapshotDiff_AllStatuses(t *testing.T) {
 		filepath.Join(cfgDir, "shared.txt"),
 		// intentionally omitting old.txt so it appears as "removed"
 		filepath.Join(cfgDir, "new.txt"),
-	}, "new", "main")
+	}, "new", "main", "")
 
 	diffs, err := r.SnapshotDiff(s1.ID, s2.ID)
 	if err != nil {
@@ -385,8 +385,8 @@ func TestSnapshotDiff_BothNonexistent(t *testing.T) {
 	os.MkdirAll(cfgDir, 0755)
 
 	r := NewRegistry(tmpDir)
-	s1, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "missing.txt")}, "old", "main")
-	s2, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "missing.txt")}, "new", "main")
+	s1, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "missing.txt")}, "old", "main", "")
+	s2, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "missing.txt")}, "new", "main", "")
 
 	diffs, err := r.SnapshotDiff(s1.ID, s2.ID)
 	if err != nil {
@@ -423,8 +423,8 @@ func TestSnapshotDiff_Unchanged(t *testing.T) {
 	os.WriteFile(filepath.Join(cfgDir, "stable.txt"), []byte("same"), 0644)
 
 	r := NewRegistry(tmpDir)
-	s1, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "stable.txt")}, "old", "main")
-	s2, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "stable.txt")}, "new", "main")
+	s1, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "stable.txt")}, "old", "main", "")
+	s2, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "stable.txt")}, "new", "main", "")
 
 	diffs, err := r.SnapshotDiff(s1.ID, s2.ID)
 	if err != nil {
@@ -526,7 +526,7 @@ func TestSnapshotContent(t *testing.T) {
 	os.WriteFile(filepath.Join(cfgDir, "a.toml"), []byte("hello"), 0644)
 
 	r := NewRegistry(tmpDir)
-	s, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "a.toml")}, "test", "main")
+	s, _ := r.CreateSnapshot([]string{filepath.Join(cfgDir, "a.toml")}, "test", "main", "")
 
 	content, err := r.SnapshotContent(s.ID, "a.toml")
 	if err != nil {
