@@ -1,65 +1,104 @@
 package agent
 
 import (
+	"agent-nexus/internal/proxy"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
-	"agent-nexus/internal/proxy"
 )
 
 type openCodeWriter struct{}
 
 func newOpenCodeWriter() *openCodeWriter { return &openCodeWriter{} }
 
-func (w *openCodeWriter) Name() string     { return "opencode" }
-func (w *openCodeWriter) Category() string { return "cli" }
+func (w *openCodeWriter) Name() string                     { return "opencode" }
+func (w *openCodeWriter) Category() string                 { return "cli" }
 func (w *openCodeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 
 func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) error {
-	if model == "" { model = modelDefault(w.Name()) }
-	smallModel := "myccx/deepseek-v4-flash"
+	if model == "" {
+		model = modelDefault(w.Name())
+	}
 
+	// Read existing config to preserve any user customisations.
 	var cfg map[string]interface{}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		cfg = make(map[string]interface{})
-	} else if err := json.Unmarshal(data, &cfg); err != nil {
+	} else if unmarshalErr := json.Unmarshal(data, &cfg); unmarshalErr != nil {
 		cfg = make(map[string]interface{})
 	}
 
-	provider := map[string]interface{}{
-		"$schema":     "https://opencode.ai/config.json",
-		"model":       model,
-		"small_model": smallModel,
+	providerID := "myccx"
+	modelRef := providerID + "/" + model
+
+	// Build provider block with apiKey in options (required for custom providers).
+	providerBlock := map[string]interface{}{
+		"npm":  "@ai-sdk/openai-compatible",
+		"name": providerID,
+		"options": map[string]interface{}{
+			"baseURL": p.BaseURL,
+			"apiKey":  p.APIKey,
+		},
+		"models": map[string]interface{}{
+			model: map[string]interface{}{"name": model},
+		},
 	}
 
 	provMap := map[string]interface{}{
-		"myccx": map[string]interface{}{
-			"npm": "@ai-sdk/openai-compatible",
-			"name": "myccx",
-			"options": map[string]interface{}{
-				"baseURL": p.BaseURL,
-				"apiKey":  p.APIKey,
-			},
-			"models": map[string]interface{}{
-				"glm-5.2": map[string]interface{}{"name": "glm-5.2"},
-			},
-		},
+		providerID: providerBlock,
 	}
-	provider["provider"] = provMap
 
-	cfg["model"] = model
-	cfg["small_model"] = smallModel
+	cfg["$schema"] = "https://opencode.ai/config.json"
+	cfg["model"] = modelRef
+	cfg["small_model"] = providerID + "/deepseek-v4-flash"
 	cfg["provider"] = provMap
 
-	out, _ := json.MarshalIndent(cfg, "", "  ")
+	// Also store credentials in ~/.local/share/opencode/auth.json
+	// (OpenCode requires auth credentials for non-builtin providers).
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		authDir := filepath.Join(home, ".local", "share", "opencode")
+		_ = os.MkdirAll(authDir, 0755)
+		authFile := filepath.Join(authDir, "auth.json")
+		var auth map[string]interface{}
+		if authData, authErr := os.ReadFile(authFile); authErr == nil {
+			_ = json.Unmarshal(authData, &auth)
+		} else {
+			auth = make(map[string]interface{})
+		}
+		// Store as a credential entry keyed by provider name.
+		auth[providerID] = map[string]interface{}{
+			"apiKey":  p.APIKey,
+			"baseURL": p.BaseURL,
+		}
+		authBytes, _ := json.MarshalIndent(auth, "", "  ")
+		_ = os.WriteFile(authFile, authBytes, 0644)
+	}
+
+	out, marshalErr := json.MarshalIndent(cfg, "", "  ")
+	if marshalErr != nil {
+		return marshalErr
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(path, out, 0644)
 }
 
 func (w *openCodeWriter) Status(path string) (bool, string) {
-	data, _ := os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, "未配置代理"
+	}
 	s := string(data)
-	return strings.Contains(s, "127.0.0.1") && strings.Contains(s, "3688"), "via CCX proxy"
+	if strings.Contains(s, "127.0.0.1") && strings.Contains(s, "3688") {
+		return true, "via CCX proxy"
+	}
+	return false, "未配置代理"
 }
 
 func (w *openCodeWriter) StatusModel(path string) (model, source, notes string) {

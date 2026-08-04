@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -18,6 +19,10 @@ type SniffResult struct {
 	DetectedFormat string
 	Notes          string
 	Caps           []ProtocolCap
+	// Direct capability booleans derived from Caps for convenient access.
+	OpenAICap    bool
+	AnthropicCap bool
+	ResponsesCap bool
 }
 
 // ProtocolCap describes one detected protocol.
@@ -33,6 +38,14 @@ func (r *SniffResult) HasCap(label string) bool {
 		}
 	}
 	return false
+}
+
+// syncCaps updates the direct bool fields to match Caps.
+// Called by Sniff after probing so both representations stay in sync.
+func (r *SniffResult) syncCaps() {
+	r.OpenAICap = r.HasCap("📝 Chat Completions") || r.HasCap("🤖 OpenAI Responses")
+	r.AnthropicCap = r.HasCap("💬 Anthropic Messages")
+	r.ResponsesCap = r.HasCap("🤖 OpenAI Responses")
 }
 
 // ModelItem represents one model in the /v1/models list response.
@@ -188,6 +201,7 @@ func Sniff(baseURL, apiKey string) (*SniffResult, error) {
 	}
 
 	result := sniffPath(baseURL, apiKey)
+	result.syncCaps()
 	return result, nil
 }
 
@@ -251,8 +265,6 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	}
 
 	// Probe 3: POST /v1/messages — Anthropic Messages API.
-	// NOTE: Anthropic Messages uses max_tokens, but we omit it since some
-	// providers proxying this path also reject it.
 	messagesURL := baseURL + "/messages"
 	msgsReq := map[string]interface{}{
 		"model": testModel,
@@ -267,7 +279,6 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	} else if len(msgsResp) > 0 {
 		var mr MessagesResponse
 		if err := json.Unmarshal(msgsResp, &mr); err == nil && mr.ID != "" {
-			_ = mr
 			result.Caps = append(result.Caps, ProtocolCap{Label: "💬 Anthropic Messages"})
 			result.DetectedFormat += " + Anthropic Messages"
 		} else {
@@ -421,6 +432,85 @@ func (r *SniffResult) IsOpenAICompatible() bool {
 // HasMultipleFormats returns true if multiple protocols are detected.
 func (r *SniffResult) HasMultipleFormats() bool {
 	return len(r.Caps) > 1
+}
+
+// ResponsesProbe is a standalone probe that checks whether an endpoint
+// supports the OpenAI Responses API (/v1/responses). Used by codex Configure
+// to refuse writing config when the upstream does not support the protocol.
+//
+// A connection error (e.g. the proxy is offline) does NOT mean the endpoint
+// lacks support — it just means the probe couldn't verify it. In that case
+// the probe returns true ("unknown, assume OK") so codex config is still
+// written. Only an explicit HTTP 4xx/5xx from the endpoint causes a
+// rejection, because that means the endpoint exists but does not implement
+// /v1/responses (e.g. SenseNova with only chat/completions).
+func ResponsesProbe(baseURL, apiKey string) bool {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if !strings.HasSuffix(baseURL, "/v1") {
+		baseURL += "/v1"
+	}
+	respReq := map[string]interface{}{
+		"model": "gpt-4o",
+		"input": "say hello",
+	}
+	reqBody, err := json.Marshal(respReq)
+	if err != nil {
+		return true // JSON failure shouldn't block config
+	}
+	// Use an explicit no-proxy transport so we reach the target directly,
+	// not through any configured global (CCX / Socks) proxy.
+	// Transport.Proxy = nil still honours HTTP_PROXY env vars via
+	// ProxyFromEnvironment; returning nil explicitly disables it.
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+		},
+	}
+	_, err = doRequest(client, "POST", baseURL+"/responses", apiKey, bytes.NewReader(reqBody))
+	if err == nil {
+		return true // explicit success
+	}
+	// doRequest wraps HTTP errors as "HTTP 404: ..." or "HTTP 401: ..."
+	// and network errors as "HTTP 请求失败: <conn-error>". The former means
+	// the endpoint responded (but without /v1/responses). The latter means
+	// we couldn't reach it — treat as "unknown" and allow config.
+	if strings.Contains(err.Error(), "HTTP 请求失败") {
+		return true // network error → can't prove incompatibility
+	}
+	return false // HTTP response with non-2xx → no /v1/responses
+}
+
+// GeminiProtocolProbe checks whether an endpoint supports the Gemini native
+// API protocol (/v1beta/...). Gemini CLI requires this protocol; most
+// OpenAI-compatible gateways (SenseNova, etc.) do not support it.
+//
+// A connection error does NOT mean the endpoint lacks support — it just means
+// the probe couldn't verify. In that case the probe returns true ("unknown,
+// assume OK"). Only an explicit HTTP 4xx/5xx from the endpoint causes a
+// rejection, because that means the endpoint exists but does not implement
+// /v1beta/models.
+func GeminiProtocolProbe(baseURL, apiKey string) bool {
+	// Strip /v1 suffix if present; Gemini uses /v1beta
+	u := strings.TrimSuffix(baseURL, "/")
+	if strings.HasSuffix(u, "/v1") {
+		u = u[:len(u)-3]
+	}
+	reqBody, _ := json.Marshal(map[string]interface{}{"pageSize": 5})
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+		},
+	}
+	_, err := doRequest(client, "POST", u+"/v1beta/models", apiKey, bytes.NewReader(reqBody))
+	if err == nil {
+		return true
+	}
+	if strings.Contains(err.Error(), "HTTP 请求失败") {
+		return true
+	}
+	return false
 }
 
 // UpstreamModelList fetches the list of available model IDs from the proxy's

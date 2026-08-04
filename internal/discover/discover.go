@@ -13,6 +13,7 @@ import (
 const (
 	ProtocolOpenAI = "OpenAI Compatible"
 	ProtocolACP    = "ACP"
+	ProtocolGemini = "Gemini Native"
 	ProtocolNone   = "N/A"
 )
 
@@ -41,61 +42,27 @@ func ModelSourceLabel(src ModelSource) string {
 
 // modelSourceMap classifies each agent's model source.
 var modelSourceMap = map[string]ModelSource{
-	// OpenAI Compatible: supports custom model (accepts any upstream model name)
+	// All configurable CLI agents accept upstream model names directly
 	"codex":      ModelSourceCustom,
 	"claude":     ModelSourceCustom,
-	"deepseek":   ModelSourceCustom,
 	"opencode":   ModelSourceCustom,
 	"openclaw":   ModelSourceCustom,
 	"openclaude": ModelSourceCustom,
-	"codebuddy":  ModelSourceCustom,
-	"lmstudio":   ModelSourceCustom,
-	"clawx":      ModelSourceCustom,
-	// ACP: needs model redirect (proxy maps upstream → native model name)
-	"kimi":   ModelSourceRedirect,
-	"hermes": ModelSourceRedirect,
-	"qoder":  ModelSourceRedirect,
-	"trae":   ModelSourceRedirect,
-	// Own backend / non-configurable
-	"antigravity":   ModelSourceOwn,
-	"copilot":       ModelSourceOwn,
-	"pi":            ModelSourceOwn,
-	"deveco":        ModelSourceOwn,
-	"qoder-ide":     ModelSourceOwn,
-	"trae-ide":      ModelSourceOwn,
-	"codebuddy-ide": ModelSourceOwn,
-	"windsurf":      ModelSourceOwn,
-	"zed":           ModelSourceOwn,
-	"gemini":        ModelSourceOwn,
+	"kimi":       ModelSourceCustom,
+	"hermes":     ModelSourceCustom,
+	"gemini":     ModelSourceCustom,
 }
 
 // nativeModelsMap lists the model names each agent accepts.
-// For custom-model agents: these are representative upstream model names.
-// For redirect agents: these are the native model names the agent understands.
 var nativeModelsMap = map[string]string{
-	"codex":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, glm-5, 等上游模型",
-	"claude":        "claude-sonnet, claude-3.5, claude-4, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"deepseek":      "deepseek-v4, deepseek-v4-flash, deepseek-coder, gpt-4o, o1, claude-sonnet, 等上游模型",
-	"opencode":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"openclaw":      "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"openclaude":    "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"codebuddy":     "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
-	"lmstudio":      "本地 LLM (通过 localhost 加载的任意模型，如 llama, qwen, mistral 等)",
-	"clawx":         "gpt-4, gpt-4o, o1, o3, claude-sonnet, claude-3.5, deepseek-v4, 等上游模型",
-	"kimi":          "Kimi K1, Kimi K2, Kimi-Max (通过代理路由到上游模型)",
-	"hermes":        "Hermes 2, Hermes 3 (通过代理路由到上游模型)",
-	"qoder":         "Qoder 原生模型 (通过代理路由到上游模型)",
-	"trae":          "Trae-Plus, Trae-Code (通过代理路由到上游模型)",
-	"antigravity":   "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (Google Gemini)",
-	"copilot":       "GPT-4, Claude 等 (由 GitHub 账号控制)",
-	"pi":            "Inflection Pi (Pi CLI 自有模型)",
-	"deveco":        "华为大模型 (自有模型目录)",
-	"qoder-ide":     "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"trae-ide":      "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"codebuddy-ide": "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"windsurf":      "自有 AI 后端 (具体模型由 agent 内部决定)",
-	"zed":           "无内置 AI Agent (N/A)",
-	"gemini":        "Gemini 1.5, Gemini 1.7, Gemini 2.0, Gemini Flash (通过 Google OAuth)",
+	"codex":      "gpt-4, gpt-4o, o1, o3, deepseek-v4, glm-5, 等上游模型",
+	"claude":     "claude-sonnet, claude-3.5, claude-4, gpt-4o, o1, deepseek-v4, 等上游模型",
+	"opencode":   "gpt-4, gpt-4o, o1, o3, deepseek-v4, glm-5, 等上游模型",
+	"openclaw":   "gpt-4, gpt-4o, o1, o3, deepseek-v4, glm-5, 等上游模型",
+	"openclaude": "claude-sonnet, claude-3.5, gpt-4o, o1, deepseek-v4, 等上游模型",
+	"kimi":       "gpt-4, gpt-4o, o1, deepseek-v4, glm-5, 等上游模型（通过 ACP 代理）",
+	"hermes":     "gpt-4, gpt-4o, o1, deepseek-v4, glm-5, 等上游模型（通过 ACP 代理）",
+	"gemini":     "Gemini 1.5, Gemini 2.0, Gemini 2.5 Flash (上游 Gemini 原生模型)",
 }
 
 // ModelSourceForAgent returns the model source classification for an agent.
@@ -229,57 +196,26 @@ type AgentPath struct {
 }
 
 var protocolMap = map[string]string{
-	"codex":         ProtocolOpenAI,
-	"claude":        ProtocolOpenAI,
-	"kimi":          ProtocolACP,
-	"deepseek":      ProtocolOpenAI,
-	"opencode":      ProtocolOpenAI,
-	"openclaw":      ProtocolOpenAI,
-	"openclaude":    ProtocolOpenAI,
-	"cursor":        ProtocolOpenAI,
-	"codebuddy":     ProtocolOpenAI,
-	"hermes":        ProtocolACP,
-	"qoder":         ProtocolACP,
-	"trae":          ProtocolACP,
-	"antigravity":   ProtocolNone,
-	"copilot":       ProtocolNone,
-	"pi":            ProtocolNone,
-	"deveco":        ProtocolNone,
-	"qoder-ide":     ProtocolNone,
-	"trae-ide":      ProtocolNone,
-	"codebuddy-ide": ProtocolNone,
-	"windsurf":      ProtocolNone,
-	"zed":           ProtocolNone,
-	"lmstudio":      ProtocolOpenAI,
-	"clawx":         ProtocolOpenAI,
-	"gemini":        ProtocolNone,
+	"codex":      ProtocolOpenAI,
+	"claude":     ProtocolOpenAI,
+	"kimi":       ProtocolACP,
+	"opencode":   ProtocolOpenAI,
+	"openclaw":   ProtocolOpenAI,
+	"openclaude": ProtocolOpenAI,
+	"hermes":     ProtocolACP,
+	"gemini":     ProtocolGemini,
 }
 
 var registry = AgentRegistry{
 	agents: []AgentPath{
 		{Name: "codex", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Codex/config.toml"}, HomeDirFiles: []string{".codex/config.toml"}, BinaryName: "codex", IsConfigurable: true},
-		{Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"Claude/settings.json"}, HomeDirFiles: []string{".claude/settings.json"}, BinaryName: "claude", IsConfigurable: true},
+		{Name: "claude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".claude/settings.json"}, BinaryName: "claude", IsConfigurable: true},
 		{Name: "kimi", Category: "cli", Protocol: ProtocolACP, ConfigFiles: []string{".kimi/config.toml"}, HomeDirFiles: []string{".kimi-code/config.toml", ".kimi/config.toml"}, BinaryName: "kimi", IsConfigurable: true},
-		{Name: "deepseek", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".deepseek/config.toml"}, IsConfigurable: true},
 		{Name: "opencode", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{".config/opencode/opencode.jsonc"}, BinaryName: "opencode", IsConfigurable: true},
 		{Name: "openclaw", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaw/openclaw.json"}, BinaryName: "openclaw", IsConfigurable: true},
-		{Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
-		{Name: "codebuddy", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".codebuddy/settings.json"}, IsConfigurable: true},
-		{Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".hermes/config.yaml"}, BinaryName: "hermes", IsConfigurable: true},
-		{Name: "qoder", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".qoder/config.yaml"}, IsConfigurable: true},
-		{Name: "trae", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{".traecli/config.yaml"}, IsConfigurable: true},
-		{Name: "antigravity", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".agents/config.yaml"}, IsConfigurable: false, Notes: "Google Gemini, no external model config"},
-		{Name: "copilot", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/github-copilot/config.yaml"}, IsConfigurable: false, Notes: "GitHub account determines model"},
-		{Name: "pi", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".pi/agent/settings.json"}, BinaryName: "pi", IsConfigurable: true, Notes: "Inflection Pi CLI (npm: @earendil-works/pi-coding-agent)"},
-		{Name: "deveco", Category: "cli", Protocol: ProtocolNone, ConfigFiles: []string{".config/deveco/deveco.jsonc"}, IsConfigurable: false, Notes: "Huawei OpenCode engine, own model directory"},
-		{Name: "qoder-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Qoder/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
-		{Name: "trae-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Trae/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
-		{Name: "codebuddy-ide", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"CodeBuddy/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
-		{Name: "windsurf", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Windsurf/User/settings.json"}, IsConfigurable: false, Notes: "Own AI backend"},
-		{Name: "zed", Category: "ide", Protocol: ProtocolNone, ConfigFiles: []string{"Zed/settings.json"}, IsConfigurable: false, Notes: "No built-in AI Agent"},
-		{Name: "lmstudio", Category: "cli", Protocol: ProtocolOpenAI, ConfigFiles: []string{"LM Studio/settings.json"}, IsConfigurable: true},
-		{Name: "clawx", Category: "ide", Protocol: ProtocolOpenAI, HomeDirFiles: []string{"AppData/Roaming/clawx/clawx-providers.json"}, IsConfigurable: true},
-		{Name: "gemini", Category: "cli", Protocol: ProtocolNone, HomeDirFiles: []string{".gemini/config.json"}, BinaryName: "gemini", IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
+		{Name: "openclaude", Category: "cli", Protocol: ProtocolOpenAI, HomeDirFiles: []string{".openclaude.json", ".openclaude-env"}, BinaryName: "openclaude", IsConfigurable: true},
+		{Name: "hermes", Category: "cli", Protocol: ProtocolACP, HomeDirFiles: []string{"AppData/Local/hermes/config.yaml", ".hermes/config.yaml"}, BinaryName: "hermes", IsConfigurable: true},
+		{Name: "gemini", Category: "cli", Protocol: ProtocolGemini, HomeDirFiles: []string{".gemini/config.json", ".gemini/settings.json", ".gemini/.env"}, BinaryName: "gemini", IsConfigurable: false, Notes: "Google Gemini CLI, Google auth (OAuth/API key)"},
 	},
 }
 
@@ -295,7 +231,7 @@ func Discover() []AgentInfo {
 		byName[ap.Name] = ap
 	}
 
-	// Iterate over the authoritative 11 installable runtimes from "agent list".
+	// Iterate over the authoritative 8 installable runtimes from "agent list".
 	// Only those agents are scanned; everything else is excluded from discover
 	// output (consistent with the --agents scope on the models commands).
 	for _, r := range install.AllRuntimes() {
@@ -327,16 +263,33 @@ func Discover() []AgentInfo {
 			}
 		}
 
-		// Fallback: check uninstall dirs from install registry (directories
-		// created by the official installer, not dependent on PATH or config).
-		if !found && r.UninstallPaths != nil {
-			for _, rel := range r.UninstallPaths {
-				p := filepath.Join(home, rel)
-				if _, err := os.Stat(p); err == nil {
-					configPath = p
-					found = true
-					break
+		// Fallback: when no config file exists but the agent is installed,
+		// set configPath to the expected config file (needed by conf set to
+		// create/write the file). Check by directory existence, not file.
+		if !found && ap.IsConfigurable {
+			var candidate string
+			if len(ap.HomeDirFiles) > 0 {
+				candidate = filepath.Join(home, ap.HomeDirFiles[0])
+			} else if len(ap.ConfigFiles) > 0 {
+				candidate = filepath.Join(roaming, ap.ConfigFiles[0])
+			}
+			if candidate != "" && r.UninstallPaths != nil {
+				for _, rel := range r.UninstallPaths {
+					p := filepath.Join(home, rel)
+					if info, err := os.Stat(p); err == nil && info.IsDir() {
+						// Directory exists (agent installed). Set the expected
+						// config file path so conf set can write to it.
+						configPath = candidate
+						found = true
+						break
+					}
 				}
+			}
+			// If no uninstall path but we have a binary, still set the
+			// expected config path so conf set can create the file.
+			if !found && ap.BinaryName != "" && candidate != "" {
+				configPath = candidate
+				found = true
 			}
 		}
 

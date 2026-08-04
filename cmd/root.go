@@ -791,9 +791,7 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 					for _, m := range result.Models {
 						modelIDs = append(modelIDs, m.ID)
 					}
-					openAICap := result.HasCap("📝 Chat Completions") || result.HasCap("🤖 OpenAI Responses")
-					anthCap := result.HasCap("💬 Anthropic Messages")
-					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, openAICap, anthCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
+					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ResponsesCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
 						fmt.Printf("⚠ 保存失败: %v\n", addErr)
 					} else {
 						fmt.Printf("✅ 已保存到数据库: %s\n", result.BaseURL)
@@ -967,16 +965,16 @@ func initProxyCmd() {
 
 var confCmd = &cobra.Command{
 	Use:   "conf",
-	Short: "配置管理（备份、快照、回滚、分支）",
-	Long: `配置管理命令组，用于备份、快照、回滚 agent 配置文件。
+	Short: "配置管理（统一配置入口、快照、恢复）",
+	Long: `配置管理命令组，用于统一配置 agent、备份和恢复配置文件。
 
 子命令：
-  bak       备份所有配置（创建快照）
-  history   列出所有配置快照
-  show      创建配置快照
-  rollback  恢复到指定快照
-  diff      对比两个快照的差异
-  branch    管理配置分支
+  set        统一配置入口（必须带 --db）
+  backup     手动备份所有/指定 agent 的配置文件（带名称）
+  list       列出所有配置快照（显示名称）
+  restore    按名称或 ID 恢复快照
+  migrate    从旧 versioning.json 导入快照到 DB
+  models     显示 agent 与 DB 记录中大模型的匹配情况
 `,
 }
 
@@ -1015,7 +1013,7 @@ var confBakCmd = &cobra.Command{
 		}
 
 		r := versioning.LoadRegistry(destRoot)
-		s, err := r.CreateSnapshot(paths, backupMessage, backupBranch)
+		s, err := r.CreateSnapshot(paths, backupMessage, backupBranch, "")
 		if err != nil {
 			fmt.Printf("创建快照失败: %v\n", err)
 			return err
@@ -1130,7 +1128,7 @@ var confShowCmd = &cobra.Command{
 		}
 
 		r := versioning.LoadRegistry(destRoot)
-		s, err := r.CreateSnapshot(paths, snapshotMessage, snapshotBranch)
+		s, err := r.CreateSnapshot(paths, snapshotMessage, snapshotBranch, "")
 		if err != nil {
 			fmt.Printf("创建快照失败: %v\n", err)
 			return err
@@ -1409,6 +1407,19 @@ func initConfCmd() {
 	confCmd.AddCommand(confAutoCmd)
 
 	initConfUpstreamModels()
+	initConfListCmd()
+	initConfRestoreCmd()
+	initConfMigrateCmd()
+	confCmd.AddCommand(confListCmd)
+	confCmd.AddCommand(confRestoreCmd)
+	confCmd.AddCommand(confMigrateCmd)
+	// Hide deprecated/low-frequency commands
+	confBakCmd.Hidden = true
+	confShowCmd.Hidden = true
+	confHistoryCmd.Hidden = true
+	confRollbackCmd.Hidden = true
+	confDiffCmd.Hidden = true
+	confBranchCmd.Hidden = true
 }
 
 // ========== INIT ==========

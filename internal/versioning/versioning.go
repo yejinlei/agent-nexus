@@ -12,6 +12,7 @@ import (
 // Snapshot represents a point-in-time capture of all agent config files
 type Snapshot struct {
 	ID        string            `json:"id"`        // format: YYYY-MM-DD_HH-MM-SS
+	Name      string            `json:"name"`      // human-readable label
 	Branch    string            `json:"branch"`    // branch name (default: "main")
 	Message   string            `json:"message"`   // commit message
 	CreatedAt time.Time         `json:"created_at"`
@@ -97,7 +98,7 @@ func (r *Registry) Save() error {
 }
 
 // CreateSnapshot captures the current state of the specified config files
-func (r *Registry) CreateSnapshot(configPaths []string, message string, branch string) (*Snapshot, error) {
+func (r *Registry) CreateSnapshot(configPaths []string, message string, branch string, name string) (*Snapshot, error) {
 	if branch == "" {
 		branch = r.CurrentBranch
 	}
@@ -108,6 +109,7 @@ func (r *Registry) CreateSnapshot(configPaths []string, message string, branch s
 
 	snapshot := &Snapshot{
 		ID:        time.Now().Format("2006-01-02_15-04-05.000000"),
+		Name:      name,
 		Branch:    branch,
 		Message:   message,
 		CreatedAt: time.Now(),

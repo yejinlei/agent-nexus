@@ -170,8 +170,12 @@ func runConfList(opts runConfListOpts) error {
         }
 
         // Display the snapshot
-        fmt.Printf("\n  [%s] %s | 分支: %s | 类型: %s\n", "", s.ID, s.Branch, s.Type)
-        fmt.Printf("       时间: %s  信息: %s\n", s.CreatedAt, s.Message)
+			snapshotName := s.Name
+			if snapshotName == "" {
+				snapshotName = "(未命名)"
+			}
+			fmt.Printf("\n  名称: %s\n", snapshotName)
+			fmt.Printf("  [%s] ID: %s | 分支: %s | 类型: %s\n", "", s.ID, s.Branch, s.Type)
         displayedCount++
     }
 

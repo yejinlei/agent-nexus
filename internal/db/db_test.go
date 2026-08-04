@@ -152,7 +152,7 @@ func TestCreateSnapshotAutoID(t *testing.T) {
 	defer cleanup()
 	d.Init()
 
-	id, err := d.CreateSnapshotAutoID("global", "", "main", "auto id test", nil, []BackupConfigEntry{
+	id, err := d.CreateSnapshotAutoID("global", "", "main", "auto id test", "", nil, []BackupConfigEntry{
 		{AgentName: "agent-x", FilePath: "/x", FileBasename: "x", SHA256: "h1", FileSize: 1, FileContent: "x"},
 	})
 	if err != nil {
@@ -332,7 +332,7 @@ func TestExistsByURL(t *testing.T) {
 	}
 
 	// Insert a proxy (URL stored without normalisation)
-	if err := d.Add("http://example.com/v1", "key1", "OpenAI", true, false, 1, []string{"m1"}, time.Now()); err != nil {
+	if err := d.Add("http://example.com/v1", "key1", "OpenAI", true, false, false, 1, []string{"m1"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

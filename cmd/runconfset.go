@@ -24,21 +24,23 @@ import (
 
 // runConfSetOpts carries the unified conf set options.
 type runConfSetOpts struct {
-	agent  string // "all" or comma-separated agent names
-	db     string // "auto" or "<N>" where N is a DB proxy record id; empty means use auto-detect
-	dryRun bool
+	agent        string // "all" or comma-separated agent names
+	db           string // "auto" or "<N>" (required)
+	dryRun       bool
+	autoName     string // user-provided snapshot name for auto-backup
 }
 
 var (
 	confSetAgent string
-	confSetDB    string
-	confSetDry   bool
+	confSetDB        string
+	confSetDry       bool
+	confSetAutoName string
 )
 
 // confSetCmd is the single unified entry point for adding/mapping
 // AI-gateway models onto agent configurations.
 var confSetCmd = &cobra.Command{
-	Use:   "set --agent <name|all> [--db auto|<N>]",
+	Use:   "set --agent <name|all> --db <auto|N>",
 	Short: "统一配置入口：从 DB 选取 AI 网关记录，添加/映射大模型到 agent",
 	Long: `统一配置入口，收紧为唯一的添加/映射大模型通道。
 
@@ -53,7 +55,7 @@ var confSetCmd = &cobra.Command{
   --db       选择 AI 网关记录来源：
              auto    自动选取 DB 中 id 最小的记录（默认）
              <N>     选取 DB 中 id=N 的记录
-             不传或留空 则回退到自动检测代理（CCX Desktop / CC-Switch）
+             必选
 
 行为：
   1. 选取 DB 记录 → 获取该记录的 upstream 模型列表
@@ -64,14 +66,16 @@ var confSetCmd = &cobra.Command{
        将 agent 原生模型名映射到 upstream 模型（"映射"）
        映射算法：关键字匹配 → 默认模型匹配 → 兜底首个 upstream 模型
   3. 将重定向映射写入 proxy_model_mappings 表持久化
-  4. 自动备份：调用 conf bak 对将被修改的 agent 配置文件做全量备份
-  5. 写入各 agent 配置文件
+  4. 自动备份：配置写入前对所有已安装 agent 生成全量快照（存 DB）
+  5. --backup-name 给自动快照命名；留空自动用时间戳
+  6. 写入各 agent 配置文件
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := runConfSetOpts{
-			agent:  confSetAgent,
-			db:     confSetDB,
-			dryRun: confSetDry,
+			agent:    confSetAgent,
+			db:       confSetDB,
+			dryRun:   confSetDry,
+			autoName: confSetAutoName,
 		}
 		if opts.agent == "" {
 			opts.agent = "all"
@@ -83,44 +87,15 @@ var confSetCmd = &cobra.Command{
 func initConfSetCmd() {
 	fs := confSetCmd.Flags()
 	fs.StringVarP(&confSetAgent, "agent", "a", "all", "要配置的 agent（逗号分隔），用 all 配置所有可配置 agent")
-	fs.StringVar(&confSetDB, "db", "", "AI 网关来源：auto=最小 id 记录，<N>=指定 id；留空则自动检测")
+	fs.StringVar(&confSetDB, "db", "", "AI 网关来源（必选）：auto=最小 id 记录，<N>=指定 id")
 	fs.BoolVarP(&confSetDry, "dry-run", "d", false, "预览模式，不实际写入")
+	fs.StringVar(&confSetAutoName, "backup-name", "", "配置前自动快照的名称（留空自动用时间戳）")
+	confSetCmd.MarkFlagRequired("db")
 }
 
 // runConfSet is the unified configuration pipeline.
 func runConfSet(opts runConfSetOpts) error {
-	// 1. Resolve proxy source: DB record (auto/N) or auto-detect
-	if opts.db != "" {
-		return runConfSetFromDB(opts)
-	}
-
-	// DB flag not provided: fallback to auto-detect
-	p, src, err := getProxySource(proxyURL, proxyKey)
-	if err != nil {
-		return fmt.Errorf("获取代理配置失败: %v", err)
-	}
-	if p == nil {
-		return fmt.Errorf(
-			"未检测到 AI 代理配置；请使用 --db auto 或 --db <N> 从 DB 选择，\n" +
-				"或使用 --url 和 --key 指定代理")
-	}
-	fmt.Printf("AI 代理来源: %s (%s)\n", src, p.BaseURL)
-
-	// When not using DB, fall back to the legacy resolution flow
-	toConfigureNames, err := resolveAgentList(opts.agent)
-	if err != nil {
-		return err
-	}
-	if len(toConfigureNames) == 0 {
-		fmt.Println("未找到可配置的 agent")
-		return nil
-	}
-
-	upstreamModels := probeUpstreamModels(p.BaseURL, p.APIKey)
-
-	// Resolve model for each agent (legacy)
-	legacyProcess(p, upstreamModels, toConfigureNames, opts.dryRun)
-	return nil
+	return runConfSetFromDB(opts)
 }
 
 // runConfSetFromDB handles the DB-sourced proxy flow.
@@ -194,7 +169,7 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 	}
 
 	// Process: custom-model add vs redirect mapping
-	_, err = processAgents(p, rec, proxyID, dbInst, upstreamModels, toConfigureNames, opts.dryRun)
+	_, err = processAgents(p, rec, proxyID, dbInst, upstreamModels, toConfigureNames, opts.dryRun, opts.autoName)
 	return err
 }
 
@@ -289,8 +264,8 @@ func probeUpstreamModels(baseURL, apiKey string) []string {
 // model written directly into their config.
 func isCustomModelAgent(agentName string) bool {
 	customAgents := []string{
-		"codex", "claude", "deepseek", "opencode", "openclaw",
-		"openclaude", "codebuddy", "lmstudio", "clawx",
+		"codex", "claude", "opencode", "openclaw", "openclaude",
+		"kimi", "hermes", "gemini",
 	}
 	for _, a := range customAgents {
 		if a == agentName {
@@ -310,6 +285,7 @@ func processAgents(
 	upstreamModels []string,
 	agentNames []string,
 	dryRun bool,
+	autoName string,
 ) (configured int, err error) {
 	if len(upstreamModels) == 0 {
 		return 0, fmt.Errorf("上游无可用模型，无法配置（请先运行 'agent-nexus db add' 或 'agent-nexus proxy sniff' 添加网关记录）")
@@ -364,18 +340,28 @@ func processAgents(
 		return 0, nil
 	}
 
-	// 3. Auto-backup BEFORE writing
+	// 3. Auto-backup BEFORE writing - snapshot ALL configurable agents
 	fmt.Println("正在备份现有配置...")
 	allAgents := discover.Discover()
 	nameToAgent := make(map[string]discover.AgentInfo)
 	for _, a := range allAgents {
 		nameToAgent[a.Name] = a
 	}
-	snapshotID, bakErr := createAutoBackup(agentNames, nameToAgent, fmt.Sprintf("conf set --agent %v --db %d", agentNames, proxyID))
+	allConfigurable := make([]string, 0, len(nameToAgent))
+	for name, a := range nameToAgent {
+		if a.HasConfig && a.IsConfigurable && a.ConfigPath != "" {
+			allConfigurable = append(allConfigurable, name)
+		}
+	}
+	autoSnapshotName := autoName
+	if autoSnapshotName == "" {
+		autoSnapshotName = fmt.Sprintf("auto-backup-%s", time.Now().Format("2006-01-02_15-04-05"))
+	}
+	snapshotUUID, bakErr := createAutoSnapshot(allConfigurable, nameToAgent, autoSnapshotName, fmt.Sprintf("conf set --agent %v --db %d", agentNames, proxyID))
 	if bakErr != nil {
 		fmt.Printf("  ⚠ 自动备份失败: %v（继续执行配置写入）\n", bakErr)
 	} else {
-		fmt.Printf("  备份快照: %s\n", snapshotID)
+		fmt.Printf("  备份快照: %s (名称: %s)\n", snapshotUUID, autoSnapshotName)
 	}
 	fmt.Println()
 
@@ -430,6 +416,12 @@ func processAgents(
 		}
 		err := w.Configure(cfgPath, p, bestModel)
 		if err != nil {
+			if agent.IsProtocolIncompatible(err) {
+				pi := err.(*agent.ErrProtocolIncompatible)
+				fmt.Printf("  [INCOMPAT] %s: %s\n", name, pi.Reason)
+				fmt.Printf("            换用支持 %s 的代理（如 CCX Desktop），或使用其他 agent（如 claude）\n", pi.Reason)
+				continue
+			}
 			fmt.Printf("  [FAIL] %s: %v\n", name, err)
 			continue
 		}
@@ -443,81 +435,12 @@ func processAgents(
 	return configured, nil
 }
 
-// legacyProcess runs the pre-DB legacy flow (auto-detect proxy).
+// legacyProcess is now a no-op; the auto-detect path has been removed.
+// It is kept as a stub to avoid breaking imports.
+// legacyProcess is now a no-op; the auto-detect path has been removed.
 func legacyProcess(p *proxy.Proxy, upstreamModels []string, agentNames []string, dryRun bool) {
-	resolutions := model.ResolveAllModels(upstreamModels, p.ModelMap)
-	fmt.Println("模型分辨率览:")
-	fmt.Println(strings.Repeat("-", 80))
-	for _, name := range agentNames {
-		modelName, found := model.ModelToWrite(resolutions, make(map[string]string), name)
-		if !found {
-			fmt.Printf("  %-14s -> (未配置)\n", name)
-			continue
-		}
-		notes := ""
-		source := ""
-		for _, r := range resolutions {
-			if r.Agent == name {
-				notes = r.Notes
-				source = r.Source
-				break
-			}
-		}
-		fmt.Printf("  %-14s -> %-30s [%s] %s\n", name, modelName, source, notes)
-	}
-	fmt.Println()
-	if dryRun {
-		fmt.Printf("[预览模式 --dry-run] 未实际写入任何配置。\n")
-		return
-	}
-	// Backup
-	fmt.Println("正在备份现有配置...")
-	bakErr := runConfBackup(runConfBackupOpts{
-		agents:  "all",
-		branch:  "main",
-		message: "conf set: legacy flow",
-	})
-	if bakErr != nil {
-		fmt.Printf("  ⚠ 备份失败: %v\n", bakErr)
-	} else {
-		fmt.Println("  备份成功")
-	}
-	fmt.Println()
-	// Write configs
-	fmt.Println("正在配置 agent...")
-	fmt.Println(strings.Repeat("-", 60))
-	registry := agent.NewWriterRegistry()
-	allAgents := discover.Discover()
-	nameToAgent := make(map[string]discover.AgentInfo)
-	for _, a := range allAgents {
-		nameToAgent[a.Name] = a
-	}
-	for _, name := range agentNames {
-		w := registry.Get(name)
-		if w == nil {
-			fmt.Printf("  [SKIP] %s: 不支持配置的 writer\n", name)
-			continue
-		}
-		modelName, found := model.ModelToWrite(resolutions, make(map[string]string), name)
-		if !found {
-			fmt.Printf("  [SKIP] %s: 无法解析模型\n", name)
-			continue
-		}
-		a := nameToAgent[name]
-		cfgPath := a.ConfigPath
-		if cfgPath == "" {
-			home := userHomeDir()
-			cfgPath = filepath.Join(home, "."+name, "config.toml")
-			_ = os.MkdirAll(filepath.Dir(cfgPath), 0755)
-		}
-		err := w.Configure(cfgPath, p, modelName)
-		if err != nil {
-			fmt.Printf("  [FAIL] %s: %v\n", name, err)
-			continue
-		}
-		fmt.Printf("  [OK] %s -> %s\n", name, modelName)
-	}
 }
+
 
 // getProxySource resolves a proxy from command-line flags or auto-detect.
 // (No longer used for DB; kept for backward compat when --url/--key are set.)
@@ -538,17 +461,15 @@ func getProxySource(cliURL, cliKey string) (*proxy.Proxy, string, error) {
 	return nil, "auto-detect", err
 }
 
-// createAutoBackup performs a snapshot of the configs about to be modified.
-// It stores the snapshot in BOTH the DB and the filesystem (dual-store) under
-// a single UUID, mirroring the behavior of 'conf backup'.
+// createAutoSnapshot creates a DB-only snapshot of the configs about to be modified.
+// Backs up all configurable agents, not just those being configured.
 // Returns the snapshot UUID on success, or an error.
-func createAutoBackup(
+func createAutoSnapshot(
 	agentNames []string,
 	nameToAgent map[string]discover.AgentInfo,
+	snapshotName string,
 	message string,
 ) (string, error) {
-	home := userHomeDir()
-	destRoot := filepath.Join(home, ".codex", "backups")
 
 	var bf []backupFile
 	for _, name := range agentNames {
@@ -586,29 +507,13 @@ func createAutoBackup(
 	}
 
 	snapshotUUID := uuid.New().String()
-	snapshotDir := filepath.Join(destRoot, "snapshots", snapshotUUID)
-
-	// Write to filesystem
-	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
-		return "", fmt.Errorf("创建备份目录失败: %w", err)
-	}
-	written := 0
-	for _, f := range bf {
-		dst := filepath.Join(snapshotDir, f.agentName+"_"+f.basename)
-		if err := os.WriteFile(dst, f.content, 0644); err != nil {
-			return "", fmt.Errorf("写入备份文件失败: %w", err)
-		}
-		written++
-	}
-
-	// Write to DB
 	dbInst, dbErr := db.New()
 	if dbErr != nil {
-		return snapshotUUID, fmt.Errorf("数据库不可用（仅文件系统备份成功）: %w", dbErr)
+		return "", fmt.Errorf("数据库不可用: %w", dbErr)
 	}
 	defer dbInst.Close()
 	if initErr := dbInst.Init(); initErr != nil {
-		return snapshotUUID, fmt.Errorf("数据库初始化失败（仅文件系统备份成功）: %w", initErr)
+		return "", fmt.Errorf("数据库初始化失败: %w", initErr)
 	}
 	var entries []db.BackupConfigEntry
 	for _, f := range bf {
@@ -624,20 +529,13 @@ func createAutoBackup(
 			Error:        "",
 		})
 	}
-	snapshot := &db.BackupSnapshot{
-		ID:        snapshotUUID,
-		Type:      "global",
-		AgentName: "ALL",
-		Branch:    "main",
-		Message:   message,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := dbInst.CreateSnapshot(snapshot, entries); err != nil {
-		return snapshotUUID, fmt.Errorf("写入数据库失败（仅文件系统备份成功）: %w", err)
+	writtenUUID, err := dbInst.CreateSnapshotAutoID("global", "ALL", "main", message, snapshotName, nil, entries)
+	if err != nil {
+		return "", fmt.Errorf("写入数据库失败: %w", err)
 	}
 
-	fmt.Printf("  备份快照: %s (DB + 文件系统, %d 个文件)\n", snapshotUUID, written)
-	return snapshotUUID, nil
+	fmt.Printf("  备份快照: %s (DB, 名称: %s, %d 个文件)\n", writtenUUID, snapshotName, len(bf))
+	return writtenUUID, nil
 }
 
 type backupFile struct {
