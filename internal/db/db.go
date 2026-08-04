@@ -174,7 +174,10 @@ func (d *DB) Init() error {
 	}
 
 	// Migration: add responses_cap column if it doesn't exist.
-	// Safe: SQLite ALTER TABLE IGNORE adds no-op when column exists.
+	// SQLite rejects ALTER TABLE ADD COLUMN on an existing column (duplicate
+	// column name); the error is intentionally discarded so re-running Init is
+	// idempotent. We do NOT use ALTER TABLE IF NOT EXISTS — modernc.org/sqlite
+	// does not support it.
 	_, _ = d.db.Exec("ALTER TABLE proxies ADD COLUMN responses_cap INTEGER NOT NULL DEFAULT 0")
 
 	// Migration: add name column (human-readable label) to backup_snapshots.
@@ -357,19 +360,12 @@ func (d *DB) GetEntriesBySnapshot(snapshotID string) ([]BackupConfigEntry, error
 
 func (d *DB) Add(url, key, detectedFormat string, openaiCap, anthropicCap, responsesCap bool, modelCount int, modelIDs []string, createdAt time.Time) error {
 	modelsJSON, _ := json.Marshal(modelIDs)
-	var maxID sql.NullInt64
-	err := d.db.QueryRow("SELECT MAX(id) FROM proxies").Scan(&maxID)
-	if err != nil {
-		return fmt.Errorf("query max id: %w", err)
-	}
-	nextID := 1
-	if maxID.Valid {
-		nextID = int(maxID.Int64) + 1
-	}
-	_, err = d.db.Exec(`
-		INSERT INTO proxies (id, url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, nextID, url, key, detectedFormat, boolToInt(openaiCap), boolToInt(anthropicCap), boolToInt(responsesCap), modelCount, string(modelsJSON), createdAt.Format(time.RFC3339))
+	// Delegate ID assignment to AUTOINCREMENT to avoid race conditions when
+	// multiple processes compute nextID from SELECT MAX(id) simultaneously.
+	_, err := d.db.Exec(`
+		INSERT INTO proxies (url, key, detected_format, openai_cap, anthropic_cap, responses_cap, model_count, models_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, url, key, detectedFormat, boolToInt(openaiCap), boolToInt(anthropicCap), boolToInt(responsesCap), modelCount, string(modelsJSON), createdAt.Format(time.RFC3339))
 	return err
 }
 

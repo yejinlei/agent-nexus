@@ -36,6 +36,10 @@ agent-nexus 围绕 8 个可安装的 agent 运行时构建（`agent list` 返回
 | ------ | --- | -------------------------------------------- |
 | gemini | CLI | Google Gemini CLI，Google auth（OAuth/API key） |
 
+> **注意**：`gemini` 使用 Google 原生 Gemini 协议（`/v1beta/...`），不走外部代理，且需要 Google OAuth/API key 认证。
+> 它**不是** OpenAI 兼容的自定义模型 agent，也不会被 `agent-nexus` 配置或重定向。
+> 如果在 `conf set --agent` 中显式指定 `gemini`，它会被分到"需重定向"类别并以明确的警告跳过。
+
 > 以下 agent 可在本机被发现（`agent discover` 仍会识别），但不在可安装运行时列表中，因此不参与 `agent models` 等命令：
 > antigravity（Google Gemini, OAuth/API key）、copilot（GitHub 账号权益）、deveco（华为 OpenCode 引擎）、pi（Inflection Pi）、deepseek（OpenAI Compatible, 无内置安装器）、codebuddy（Claude Code 兼容, 无内置安装器）、qoder（ACP）、trae（ACP）、lmstudio（OpenAI Compatible）、clawx（IDE）、qoder-ide / trae-ide / codebuddy-ide / windsurf（IDE 自有 AI 后端）、zed（无内置 AI Agent）。
 
@@ -297,6 +301,10 @@ agent-nexus db check <id>                  嗅探指定记录是否仍然有效
 agent-nexus db check --all                 嗅探所有记录
 ```
 
+> **ID 参数**：`show` / `rm` / `check` / `query` 中的 `<id>` 必须是**纯整数**（如 `2`）。
+> 传入带字母（`12a`）、空字符串等会报错，不会静默解析成数字。
+> `proxy check <id>` 和 `models --db <N>` 同样要求纯整数 ID（或 `all`）。
+
 #### `db add`
 
 嗅探指定代理 URL，自动检测消息格式和可用模型列表，保存到 SQLite 数据库：
@@ -315,10 +323,11 @@ agent-nexus db list
 
 #### `db show <id>`
 
-显示指定 ID 的代理配置完整详情，包括完整 API Key 和全部模型名称列表：
+显示指定 ID 的代理配置详情，包括模型名称列表；**API Key 会自动脱敏显示**（首 8 末 4，中间 `...`），避免在终端或日志中泄露密钥：
 
 ```powershell
 agent-nexus db show 2
+# 输出中 Key 字段类似: sk-12345...cdef
 ```
 
 #### `db rm <id>` / `rm --all`
@@ -377,6 +386,8 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 | 参数                 | 说明                                              |
 | ------------------ | ----------------------------------------------- |
 | `--agent` / `-a`   | 指定 agent（逗号分隔），`all` 代表所有可配置 agent（默认 `all`）    |
+| `--db`             | 代理来源，`auto` 选取 id 最小的记录，或指定 `<N>`（必选）           |
+| `--backup-name`    | 配置前自动备份快照的名称（留空自动生成时间戳）。**同名快照会被自动跳过并改写时间戳，避免冲突** |
 | `--db`             | AI 网关来源（必选）：`auto`=DB 中 id 最小记录，`<N>`=指定 id |
 | `--dry-run` / `-d` | 预览模式，不实际写入                                      |
 | `--url`            | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测）                    |

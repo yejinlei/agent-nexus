@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -841,13 +842,19 @@ func runProxyCheck(args []string, all bool) error {
 		if len(args) < 1 {
 			return fmt.Errorf("请指定代理配置 ID 或使用 --all\n\n用法: agent-nexus proxy check <id>\n    agent-nexus proxy check --all")
 		}
-		id := parseInt(args[0])
+		id, parseErr := parseInt(args[0])
+		if parseErr != nil {
+			return fmt.Errorf("无效的代理配置 ID: %s（需要纯数字）\n\n用法: agent-nexus proxy check <id>\n    agent-nexus proxy check --all", args[0])
+		}
+		if id <= 0 {
+			return fmt.Errorf("代理配置 ID 必须 > 0，得到: %d", id)
+		}
 		record, getErr := dbInst.GetByID(id)
 		if getErr != nil {
-			return fmt.Errorf("查询 ID %s 失败: %v", args[0], getErr)
+			return fmt.Errorf("查询 ID %d 失败: %v", id, getErr)
 		}
 		if record == nil {
-			fmt.Printf("未找到 ID 为 %s 的代理配置\n", args[0])
+			fmt.Printf("未找到 ID 为 %d 的代理配置\n", id)
 			return nil
 		}
 		records = []db.ProxyRecord{*record}
@@ -1727,24 +1734,19 @@ func maskKey(key string) string {
 	}
 	if len(key) <= 12 {
 		// Short key: show first 2 + masked + last 2
-		masked := "*"
-		for i := 0; i < len(key)-4; i++ {
-			masked += "*"
-		}
+		masked := strings.Repeat("*", len(key)-4)
 		return key[:2] + masked + key[len(key)-2:]
 	}
 	// Show first 8 and last 4, mask the rest.
 	return key[:8] + "..." + key[len(key)-4:]
 }
 
-func parseInt(s string) int {
-	var result int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			result = result*10 + int(c-'0')
-		}
+func parseInt(s string) (int, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return 0, fmt.Errorf("空字符串，需要数字")
 	}
-	return result
+	return strconv.Atoi(trimmed)
 }
 
 // Execute runs the root command

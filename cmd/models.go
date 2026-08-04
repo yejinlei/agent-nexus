@@ -91,9 +91,12 @@ func dbRecordsForID(dbFlag string) ([]db.ProxyRecord, error) {
 		records, err := dbInst.List()
 		return records, err
 	}
-	id := parseInt(dbFlag)
+	id, parseErr := parseInt(dbFlag)
+	if parseErr != nil {
+		return nil, fmt.Errorf("--db 的值 %s 无效（需要纯整数 ID 或 all）: %v", dbFlag, parseErr)
+	}
 	if id <= 0 {
-		return nil, fmt.Errorf("--db 的值 %s 无效，必须是整数 ID 或 all", dbFlag)
+		return nil, fmt.Errorf("--db 的值无效（ID 必须 > 0），得到: %d", id)
 	}
 	record, err := dbInst.GetByID(id)
 	if err != nil {

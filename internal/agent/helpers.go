@@ -110,13 +110,14 @@ func ExtractConfiguredModel(path string) (string, bool) {
 	if m := re.FindStringSubmatch(s); len(m) > 1 {
 		return m[1], true
 	}
-	// YAML: default_model: xxx
-	re2 := regexp.MustCompile(`(?i)default_model:\s*(\S+)`)
+	// YAML: default_model: xxx  (unquoted) or default_model: "xxx" (quoted)
+	re2 := regexp.MustCompile(`(?i)default_model:\s*["']?([^"'\s]+)["']?`)
 	if m := re2.FindStringSubmatch(s); len(m) > 1 {
 		return m[1], true
 	}
-	// JSON: "model": "xxx"
-	re3 := regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+	// JSON: "model": "xxx"  (key itself may carry a trailing comma is fine;
+	// also match single-quoted keys/values found in some configs)
+	re3 := regexp.MustCompile(`["']model["']\s*:\s*["']([^"']*)["']`)
 	if m := re3.FindStringSubmatch(s); len(m) > 1 {
 		return m[1], true
 	}

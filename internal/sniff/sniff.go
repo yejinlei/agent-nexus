@@ -294,15 +294,20 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		"contents":        []map[string]interface{}{{"parts": []map[string]interface{}{{"text": "say hello"}}}},
 	}
 	geminiBody, _ := json.Marshal(geminiReq)
-	_, geminiErr := doRequest(client, "POST", geminiURL, apiKey, bytes.NewReader(geminiBody))
+	geminiResp, geminiErr := doRequest(client, "POST", geminiURL, apiKey, bytes.NewReader(geminiBody))
 	if geminiErr != nil {
 		notes = append(notes, fmt.Sprintf("Gemini generations 端点: %v", geminiErr))
-	} else {
-		result.Caps = append(result.Caps, ProtocolCap{Label: "🔮 Gemini Generations"})
-		result.DetectedFormat += " + Gemini Generations"
+	} else if len(geminiResp) > 0 {
+		var geminiRr map[string]interface{}
+		if err := json.Unmarshal(geminiResp, &geminiRr); err == nil && geminiRr["candidates"] != nil {
+			result.Caps = append(result.Caps, ProtocolCap{Label: "🔮 Gemini Generations"})
+			result.DetectedFormat += " + Gemini Generations"
+		} else {
+			notes = append(notes, fmt.Sprintf("Gemini generations 端点返回非标准响应: %s", truncate(string(geminiResp), 120)))
+		}
 	}
 
-	// Probe 5: POST /v1/responses — OpenAI Responses API.
+	// Probe 5Probe 5: POST /v1/responses — OpenAI Responses API.
 	respURL := baseURL + "/responses"
 	respReq := map[string]interface{}{
 		"model": testModel,

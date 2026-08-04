@@ -130,19 +130,26 @@ var dbShowCmd = &cobra.Command{
 		if err := dbInst.Init(); err != nil {
 			return fmt.Errorf("初始化数据库失败: %v", err)
 		}
-		record, err := dbInst.GetByID(parseInt(args[0]))
+		id, parseErr := parseInt(args[0])
+		if parseErr != nil {
+			return fmt.Errorf("无效的代理配置 ID: %s（需要纯数字）\n\n用法: agent-nexus db show <id>", args[0])
+		}
+		if id <= 0 {
+			return fmt.Errorf("代理配置 ID 必须 > 0，得到: %d", id)
+		}
+		record, err := dbInst.GetByID(id)
 		if err != nil {
 			fmt.Printf("查询失败: %v\n", err)
 			return err
 		}
 		if record == nil {
-			fmt.Printf("未找到 ID 为 %s 的代理配置\n", args[0])
+			fmt.Printf("未找到 ID 为 %d 的代理配置\n", id)
 			return nil
 		}
 		fmt.Printf("\n代理配置详情:\n")
 		fmt.Printf("  ID:        %d\n", record.ID)
 		fmt.Printf("  URL:       %s\n", record.URL)
-		fmt.Printf("  Key:       %s\n", record.Key)
+		fmt.Printf("  Key:       %s\n", maskKey(record.Key))
 		fmt.Printf("  检测格式:  %s\n", record.DetectedFormat)
 		fmt.Printf("  OpenAI:    %v\n", record.OpenAICap)
 		fmt.Printf("  Anthropic: %v\n", record.AnthropicCap)
@@ -206,7 +213,14 @@ var dbRmCmd = &cobra.Command{
 		if err := dbInst.Init(); err != nil {
 			return fmt.Errorf("初始化数据库失败: %v", err)
 		}
-		if err := dbInst.Delete(parseInt(args[0])); err != nil {
+		id, parseErr := parseInt(args[0])
+		if parseErr != nil {
+			return fmt.Errorf("无效的代理配置 ID: %s（需要纯数字）\n\n用法: agent-nexus db rm <id>", args[0])
+		}
+		if id <= 0 {
+			return fmt.Errorf("代理配置 ID 必须 > 0，得到: %d", id)
+		}
+		if err := dbInst.Delete(id); err != nil {
 			fmt.Printf("删除失败: %v\n", err)
 			return err
 		}

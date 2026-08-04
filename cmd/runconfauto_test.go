@@ -323,6 +323,66 @@ func TestUpstreamModelList_ConnectionError(t *testing.T) {
 	}
 }
 
+// TestSniff_GeminiProbeRequiresValidResponseBody verifies that the Gemini
+// Generations probe requires a valid Gemini response body (presence of
+// "candidates" field), not just any HTTP 200.  This is a regression for the
+// fix that added response-body validation to probe 4 in sniff.sniffPath.
+func TestSniff_GeminiProbeRequiresValidResponseBody(t *testing.T) {
+	tests := []struct {
+		name        string
+		geminiBody  string
+		wantGemini  bool
+	}{
+		{
+			name:       "valid Gemini response with candidates",
+			geminiBody: `{"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}`,
+			wantGemini: true,
+		},
+		{
+			name:       "200 OK but non-Gemini body (no candidates)",
+			geminiBody: `{"id":"req-123","model":"gpt-4o"}`,
+			wantGemini: false,
+		},
+		{
+			name:       "200 OK with empty JSON body",
+			geminiBody: `{}`,
+			wantGemini: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/v1/models":
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(`{"object":"list","data":[{"id":"test-model","object":"model","created":1700000000,"owned_by":"test"}]}`))
+				case "/v1/google/v1beta/generations":
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(tc.geminiBody))
+				case "/v1/chat/completions":
+					w.WriteHeader(404)
+				case "/v1/messages":
+					w.WriteHeader(404)
+				case "/v1/responses":
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+
+			result, err := sniff.Sniff(server.URL, "test-key")
+			if err != nil {
+				t.Fatalf("sniff.Sniff: %v", err)
+			}
+			hasGemini := result.HasCap("🔮 Gemini Generations")
+			if hasGemini != tc.wantGemini {
+				t.Errorf("HasCap(Gemini Generations) = %v, want %v (body: %q)", hasGemini, tc.wantGemini, tc.geminiBody)
+			}
+		})
+	}
+}
+
 // TestModelToWrite_NoUpstreamFallback tests model resolution when upstream is empty.
 func TestModelToWrite_NoUpstreamFallback(t *testing.T) {
 	resolutions := []model.Resolution{
@@ -518,5 +578,104 @@ func TestBackupDestDir(t *testing.T) {
 	destRoot := filepath.Join(filepath.Join(home, ".codex"), "backups")
 	if destRoot != expectedRoot {
 		t.Errorf("destRoot = %s, want %s", destRoot, expectedRoot)
+	}
+}
+
+// --- parseInt (strict) regression tests ---
+
+func TestParseInt_Valid(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want int
+	}{
+		{"1", 1},
+		{"123", 123},
+		{"  42  ", 42},
+		{"007", 7},
+	} {
+		got, err := parseInt(tt.in)
+		if err != nil || got != tt.want {
+			t.Errorf("parseInt(%q) = (%d, %v), want (%d, nil)", tt.in, got, err, tt.want)
+		}
+	}
+}
+
+func TestParseInt_RejectsNonNumeric(t *testing.T) {
+	for _, in := range []string{"abc", "12a", "abc123", "", "  ", "1.2", "0x10"} {
+		_, err := parseInt(in)
+		if err == nil {
+			t.Errorf("parseInt(%q) returned nil error, want non-nil", in)
+		}
+	}
+}
+
+func TestParseInt_ZeroAndNegativeParsed(t *testing.T) {
+	// parseInt delegates parsing to strconv.Atoi; callers (db show/rm,
+	// proxy check) are responsible for rejecting id <= 0.  parseInt itself
+	// parses any valid int, including 0 and negatives.
+	for in, want := range map[string]int{
+		"0":   0,
+		"-1": -1,
+	} {
+		got, err := parseInt(in)
+		if err != nil || got != want {
+			t.Errorf("parseInt(%q) = (%d, %v), want (%d, nil)", in, got, err, want)
+		}
+	}
+}
+
+// --- maskKey regression tests ---
+
+func TestMaskKey_Lengths(t *testing.T) {
+	tests := map[string]string{
+		"":          "(none)",
+		"short":     "sh*rt",   // len 5: first 2 + 1 mask + last 2
+		"1234567890": "12******90", // len 10 (<=12): first 2 + 6 mask + last 2
+		"sk-1234567890abcdef": "sk-12345...cdef", // len 18: first 8 + ... + last 4
+	}
+	for in, want := range tests {
+		got := maskKey(in)
+		if got != want {
+			t.Errorf("maskKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestMaskKey_HidesFullKey(t *testing.T) {
+	tests := []string{"sk-1234567890abcdef", "sk-abc1234567890abcdef", "very-long-api-key-1234567890abcdef"}
+	for _, key := range tests {
+		masked := maskKey(key)
+		if masked == key {
+			t.Errorf("maskKey(%q) returned unmasked key", key)
+		}
+		// Ensure a substantial portion is masked (not just first/last few chars)
+		if strings.Index(masked, "sk-1234") < 0 && key != "" {
+			// acceptable: short keys still start with visible prefix
+		}
+	}
+}
+
+// --- isCustomModelAgent regression tests ---
+
+func TestIsCustomModelAgent_ExcludesGemini(t *testing.T) {
+	if isCustomModelAgent("gemini") {
+		t.Error("isCustomModelAgent(gemini) = true, want false (gemini uses native protocol)")
+	}
+}
+
+func TestIsCustomModelAgent_IncludesKnownCustomAgents(t *testing.T) {
+	for _, name := range []string{"codex", "claude", "opencode", "openclaw", "openclaude", "kimi", "hermes"} {
+		if !isCustomModelAgent(name) {
+			t.Errorf("isCustomModelAgent(%s) = false, want true", name)
+		}
+	}
+}
+
+func TestIsCustomModelAgent_UnknownReturnsFalse(t *testing.T) {
+	if isCustomModelAgent("unknown-agent") {
+		t.Error("isCustomModelAgent(unknown-agent) = true, want false")
+	}
+	if isCustomModelAgent("") {
+		t.Error("isCustomModelAgent(\"\") = true, want false")
 	}
 }

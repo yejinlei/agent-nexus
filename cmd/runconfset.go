@@ -265,7 +265,12 @@ func probeUpstreamModels(baseURL, apiKey string) []string {
 func isCustomModelAgent(agentName string) bool {
 	customAgents := []string{
 		"codex", "claude", "opencode", "openclaw", "openclaude",
-		"kimi", "hermes", "gemini",
+		"kimi", "hermes",
+		// NOTE: "gemini" intentionally excluded — gemini uses the Gemini native
+		// protocol (not a custom upstream model name) and is NOT configurable
+		// via agent-nexus (IsConfigurable=false in discover.go).  If the user
+		// explicitly requests --agent gemini it lands in redirectAgents and is
+		// skipped with a clear warning rather than silently accepted.
 	}
 	for _, a := range customAgents {
 		if a == agentName {
@@ -356,6 +361,20 @@ func processAgents(
 	autoSnapshotName := autoName
 	if autoSnapshotName == "" {
 		autoSnapshotName = fmt.Sprintf("auto-backup-%s", time.Now().Format("2006-01-02_15-04-05"))
+	}
+	// Guard against a duplicate name: backup_snapshots(name) has a UNIQUE
+	// constraint and createAutoSnapshot() would fail (and abort the whole
+	// conf set) if we hit it.  Detect and skip or rename before writing.
+	// Re-open a separate handle for the check (createAutoSnapshot opens its own).
+	dbCheck, dbCheckErr := db.New()
+	if dbCheckErr == nil {
+		_ = dbCheck.Init()
+		if snap, _ := dbCheck.GetSnapshotByName(autoSnapshotName); snap != nil {
+			fmt.Printf("  ⚠ 快照名称 %q 已存在（id: %s），自动备份跳过以避免冲突\n",
+				autoSnapshotName, snap.ID)
+			autoSnapshotName = fmt.Sprintf("auto-backup-%s", time.Now().Format("2006-01-02_15-04-05.000"))
+		}
+		dbCheck.Close()
 	}
 	snapshotUUID, bakErr := createAutoSnapshot(allConfigurable, nameToAgent, autoSnapshotName, fmt.Sprintf("conf set --agent %v --db %d", agentNames, proxyID))
 	if bakErr != nil {

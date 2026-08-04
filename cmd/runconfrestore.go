@@ -8,6 +8,7 @@ import (
     "time"
 
     "agent-nexus/internal/db"
+    "agent-nexus/internal/discover"
     "agent-nexus/internal/versioning"
     "github.com/spf13/cobra"
 )
@@ -170,11 +171,11 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
     }
 
     var restoredFiles []string
-    var errors []string
+    var restoreErrors []string
 
     for name, entry := range s.Configs {
         if entry.Error != "" {
-            errors = append(errors, fmt.Sprintf("%s: 未捕获 (%s)", name, entry.Error))
+            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 未捕获 (%s)", name, entry.Error))
             continue
         }
 
@@ -183,18 +184,18 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
         }
 
         if entry.Contents == "" || entry.FilePath == "" {
-            errors = append(errors, fmt.Sprintf("%s: 内容为空", name))
+            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 内容为空", name))
             continue
         }
 
         dir := filepath.Dir(entry.FilePath)
         if err := os.MkdirAll(dir, 0755); err != nil {
-            errors = append(errors, fmt.Sprintf("%s: 创建目录失败 %s: %v", name, dir, err))
+            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 创建目录失败 %s: %v", name, dir, err))
             continue
         }
 
         if err := os.WriteFile(entry.FilePath, []byte(entry.Contents), 0644); err != nil {
-            errors = append(errors, fmt.Sprintf("%s: 写入失败: %v", name, err))
+            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 写入失败: %v", name, err))
             continue
         }
 
@@ -206,21 +207,42 @@ func runConfRestore(opts runConfRestoreOpts, args []string) error {
     if dbErr == nil {
         defer dbInst.Close()
         _ = dbInst.Init()
-        _, _ = dbInst.CreateSnapshotAutoID(
-            "global",
-            "ALL",
-            opts.branch,
-            fmt.Sprintf("恢复快照: conf restore %s", targetID),
-            fmt.Sprintf("pre-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
-            nil,
-            nil,
-        )
+        if preSnap != nil && len(restoredFiles) > 0 {
+            // Write a real post-restore audit snapshot capturing the on-disk
+            // state of the agents that were just restored, so the DB history
+            // reflects what is currently on disk.
+            allAgents := discover.Discover()
+            nameToAgent := make(map[string]discover.AgentInfo)
+            for _, a := range allAgents {
+                nameToAgent[a.Name] = a
+            }
+            // Build the list of agent names whose config we restored.
+            restoredNames := make(map[string]bool)
+            for _, p := range restoredFiles {
+                base := filepath.Base(p)
+                for name := range nameToAgent {
+                    if strings.Contains(base, strings.ToLower(name)) {
+                        restoredNames[name] = true
+                    }
+                }
+            }
+            var names []string
+            for n := range restoredNames {
+                names = append(names, n)
+            }
+            _, _ = createAutoSnapshot(
+                names,
+                nameToAgent,
+                fmt.Sprintf("post-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
+                fmt.Sprintf("恢复快照: conf restore %s（%d 文件）", targetID, len(restoredFiles)),
+            )
+        }
     }
 
     fmt.Printf("\n✅ 已恢复 %d 个配置文件\n", len(restoredFiles))
-    if len(errors) > 0 {
-        fmt.Printf("\n⚠ %d 个文件恢复失败:\n", len(errors))
-        for _, e := range errors {
+    if len(restoreErrors) > 0 {
+        fmt.Printf("\n⚠ %d 个文件恢复失败:\n", len(restoreErrors))
+        for _, e := range restoreErrors {
             fmt.Printf("  %s\n", e)
         }
         if preSnap != nil {
