@@ -358,7 +358,7 @@ func TestSniff_GeminiProbeRequiresValidResponseBody(t *testing.T) {
 				case "/v1/models":
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte(`{"object":"list","data":[{"id":"test-model","object":"model","created":1700000000,"owned_by":"test"}]}`))
-				case "/v1/google/v1beta/generations":
+				case "/v1/models/test-model:generateContent":
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte(tc.geminiBody))
 				case "/v1/chat/completions":

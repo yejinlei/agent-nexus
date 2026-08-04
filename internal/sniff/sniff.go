@@ -286,12 +286,15 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		}
 	}
 
-	// Probe 4: POST /v1/google/v1beta/generations — Gemini Generations.
-	geminiURL := baseURL + "/google/v1beta/generations"
+	// Probe 4: POST /v1/models/{model}:generateContent — Gemini Generations.
+	geminiURL := baseURL + "/models/" + testModel + ":generateContent"
 	geminiReq := map[string]interface{}{
-		"model":           testModel,
-		"maxOutputTokens": 4,
-		"contents":        []map[string]interface{}{{"parts": []map[string]interface{}{{"text": "say hello"}}}},
+		"contents": []map[string]interface{}{
+			{"parts": []map[string]interface{}{{"text": "say hello"}}},
+		},
+		"generationConfig": map[string]interface{}{
+			"maxOutputTokens": 4,
+		},
 	}
 	geminiBody, _ := json.Marshal(geminiReq)
 	geminiResp, geminiErr := doRequest(client, "POST", geminiURL, apiKey, bytes.NewReader(geminiBody))
@@ -307,13 +310,14 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 		}
 	}
 
-	// Probe 5Probe 5: POST /v1/responses — OpenAI Responses API.
+	// Probe 5: POST /v1/responses — OpenAI Responses API.
+	// The Responses protocol requires "input" to be an array of InputItem objects,
+	// not a raw string: [{"type":"message","role":"user","content":"..."}].
 	respURL := baseURL + "/responses"
 	respReq := map[string]interface{}{
 		"model": testModel,
-		"input": "say hello",
-		"text": map[string]interface{}{
-			"maxOutputTokens": 4,
+		"input": []map[string]interface{}{
+			{"type": "message", "role": "user", "content": "say hello"},
 		},
 	}
 	respBody, _ := json.Marshal(respReq)
