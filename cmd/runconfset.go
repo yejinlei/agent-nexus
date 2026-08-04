@@ -31,18 +31,18 @@ type runConfSetOpts struct {
 }
 
 var (
-	confSetAgent string
-	confSetDB        string
-	confSetDry       bool
+	confSetAgent    string
+	confSetDB       string
+	confSetDry      bool
 	confSetAutoName string
 )
 
-// confSetCmd is the single unified entry point for adding/mapping
-// AI-gateway models onto agent configurations.
+// confSetCmd is the single unified entry point for writing upstream
+// model names onto agent configurations.
 var confSetCmd = &cobra.Command{
 	Use:   "set --agent <name|all> --db <auto|N>",
-	Short: "统一配置入口：从 DB 选取 AI 网关记录，添加/映射大模型到 agent",
-	Long: `统一配置入口，收紧为唯一的添加/映射大模型通道。
+	Short: "统一配置入口：从 DB 选取 AI 网关记录，添加大模型到 agent",
+	Long: `统一配置入口。
 
 用法：
   agent-nexus conf set --agent all --db auto
@@ -53,22 +53,16 @@ var confSetCmd = &cobra.Command{
 参数：
   --agent    指定具体 agent（逗号分隔），用 all 配置所有可配置 agent
   --db       选择 AI 网关记录来源：
-             auto    自动选取 DB 中 id 最小的记录（默认）
-             <N>     选取 DB 中 id=N 的记录
-             必选
+	             auto    自动选取 DB 中 id 最小的记录（默认）
+	             <N>     选取 DB 中 id=N 的记录
+	             必选
 
 行为：
   1. 选取 DB 记录 → 获取该记录的 upstream 模型列表
-  2. 对每个 agent 分类：
-     • 自定义模型 agent（codex/claude/deepseek/opencode/...）→ 自动选取
-       最佳匹配的 upstream 模型写入 agent 配置（"添加自定义模型"）
-     • 重定向模型 agent（kimi/hermes/qoder/trae）→ 通过代理模型映射，
-       将 agent 原生模型名映射到 upstream 模型（"映射"）
-       映射算法：关键字匹配 → 默认模型匹配 → 兜底首个 upstream 模型
-  3. 将重定向映射写入 proxy_model_mappings 表持久化
-  4. 自动备份：配置写入前对所有已安装 agent 生成全量快照（存 DB）
-  5. --backup-name 给自动快照命名；留空自动用时间戳
-  6. 写入各 agent 配置文件
+  2. 对每个 agent 自动选取最佳匹配的 upstream 模型写入 agent 配置
+  3. 自动备份：配置写入前对所有已安装 agent 生成全量快照（存 DB）
+  4. --backup-name 给自动快照命名；留空自动用时间戳
+  5. 写入各 agent 配置文件
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := runConfSetOpts{
@@ -137,15 +131,9 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 	// Build proxy struct from DB record
 	models := db.GetModelsFromRecord(rec)
 	p := &proxy.Proxy{
-		BaseURL:  rec.URL,
-		APIKey:   rec.Key,
-		Source:   proxy.ProxyType("db"),
-		ModelMap: make(map[string]string),
-	}
-	// Build proxy map from stored redirect mappings for this record
-	mappings := dbInst.GetAllModelMappingsByProxy(proxyID)
-	for _, m := range mappings {
-		p.ModelMap[m.NativeModel] = m.UpstreamModel
+		BaseURL: rec.URL,
+		APIKey:  rec.Key,
+		Source:  proxy.ProxyType("db"),
 	}
 
 	src := fmt.Sprintf("db:%d", rec.ID)
@@ -159,17 +147,16 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 	}
 
 	// Resolve agent list
-	toConfigureNames, err := resolveAgentList(opts.agent)
+	agentNames, err := resolveAgentList(opts.agent)
 	if err != nil {
 		return err
 	}
-	if len(toConfigureNames) == 0 {
+	if len(agentNames) == 0 {
 		fmt.Println("未找到可配置的 agent")
 		return nil
 	}
 
-	// Process: custom-model add vs redirect mapping
-	_, err = processAgents(p, rec, proxyID, dbInst, upstreamModels, toConfigureNames, opts.dryRun, opts.autoName)
+	_, err = processAgents(p, rec, proxyID, upstreamModels, agentNames, opts.dryRun, opts.autoName)
 	return err
 }
 
@@ -185,7 +172,6 @@ func resolveDBArg(flag string) (int, error) {
 	if strings.EqualFold(flag, "auto") {
 		return 0, nil
 	}
-	// Numeric ID
 	n, err := strconv.Atoi(flag)
 	if err != nil {
 		return -1, fmt.Errorf(
@@ -198,7 +184,7 @@ func resolveDBArg(flag string) (int, error) {
 	return n, nil
 }
 
-// resolveAgentList parses --agent into a deduped sorted list of agent names.
+// resolveAgentList parses --agent into a sorted list of agent names.
 // Returns only agents present in shared.DefaultModels (configurable agents).
 func resolveAgentList(agentsStr string) ([]string, error) {
 	configurable := make([]string, 0, len(shared.DefaultModels))
@@ -230,20 +216,11 @@ func resolveAgentList(agentsStr string) ([]string, error) {
 
 	// Warn about unknown agents
 	for s := range selectedSet {
-		if !agentInSet(s, configurable) {
+		if !containsString(s, configurable) {
 			fmt.Printf("⚠ 未知或不可配置 agent: %s（将被跳过）\n", s)
 		}
 	}
 	return names, nil
-}
-
-func agentInSet(name string, set []string) bool {
-	for _, n := range set {
-		if n == name {
-			return true
-		}
-	}
-	return false
 }
 
 // probeUpstreamModels queries the proxy's /v1/models endpoint.
@@ -253,40 +230,17 @@ func probeUpstreamModels(baseURL, apiKey string) []string {
 		return nil
 	}
 	fmt.Println("正在查询上游模型列表...")
-	// sniff.UpstreamModelList requires import
 	ids := sniff.UpstreamModelList(baseURL, apiKey)
 	fmt.Printf("上游可用模型: %d\n", len(ids))
 	return ids
 }
 
-// isCustomModelAgent returns true for agents that accept arbitrary upstream
-// model names (OpenAI-compatible). These get their best-matched upstream
-// model written directly into their config.
-func isCustomModelAgent(agentName string) bool {
-	customAgents := []string{
-		"codex", "claude", "opencode", "openclaw", "openclaude",
-		"kimi", "hermes",
-		// NOTE: "gemini" intentionally excluded — gemini uses the Gemini native
-		// protocol (not a custom upstream model name) and is NOT configurable
-		// via agent-nexus (IsConfigurable=false in discover.go).  If the user
-		// explicitly requests --agent gemini it lands in redirectAgents and is
-		// skipped with a clear warning rather than silently accepted.
-	}
-	for _, a := range customAgents {
-		if a == agentName {
-			return true
-		}
-	}
-	return false
-}
-
 // processAgents handles the full flow for DB-sourced proxy:
-// custom-model adding vs redirect mapping, backup, and config writing.
+// model selection, backup, and config writing.
 func processAgents(
 	p *proxy.Proxy,
 	dbRec *db.ProxyRecord,
 	proxyID int,
-	dbInst *db.DB,
 	upstreamModels []string,
 	agentNames []string,
 	dryRun bool,
@@ -299,42 +253,16 @@ func processAgents(
 	fmt.Println("模型分辨率览:")
 	fmt.Println(strings.Repeat("-", 80))
 
-	// Classification
-	var customAgents []string
-	var redirectAgents []string
+	// Preview: pick best matching upstream model for each agent
 	for _, name := range agentNames {
-		if isCustomModelAgent(name) {
-			customAgents = append(customAgents, name)
-		} else {
-			redirectAgents = append(redirectAgents, name)
-		}
-	}
-
-	// 1. Custom-model agents: pick best matching upstream model
-	for _, name := range customAgents {
 		bestModel := model.PickCustomModel(name, upstreamModels)
 		defaultModel, _ := shared.GetDefaultModel(name)
-		source := "custom"
-		notes := fmt.Sprintf("从上游 %d 个模型中自动选取最佳匹配", len(upstreamModels))
 		if bestModel == "" {
 			fmt.Printf("  %-14s -> (跳过，无匹配模型)\n", name)
 			continue
 		}
-		fmt.Printf("  %-14s -> %-30s [%s] (默认: %s) %s\n",
-			name, bestModel, source, defaultModel, notes)
-	}
-
-	// 2. Redirect agents: compute redirect mappings
-	for _, name := range redirectAgents {
-		redirects := model.ComputeRedirectMappings(name, upstreamModels)
-		if len(redirects) == 0 {
-			fmt.Printf("  %-14s -> (跳过，无法构建映射)\n", name)
-			continue
-		}
-		for _, rm := range redirects {
-			fmt.Printf("  %-14s %-25s → %-30s [%s]\n",
-				name, rm.NativeModel, rm.UpstreamID, rm.Reason)
-		}
+		fmt.Printf("  %-14s -> %-30s (默认: %s, 上游 %d 个模型中最佳匹配)\n",
+			name, bestModel, defaultModel, len(upstreamModels))
 	}
 
 	fmt.Println()
@@ -345,7 +273,7 @@ func processAgents(
 		return 0, nil
 	}
 
-	// 3. Auto-backup BEFORE writing - snapshot ALL configurable agents
+	// Auto-backup BEFORE writing - snapshot ALL configurable agents
 	fmt.Println("正在备份现有配置...")
 	allAgents := discover.Discover()
 	nameToAgent := make(map[string]discover.AgentInfo)
@@ -364,8 +292,7 @@ func processAgents(
 	}
 	// Guard against a duplicate name: backup_snapshots(name) has a UNIQUE
 	// constraint and createAutoSnapshot() would fail (and abort the whole
-	// conf set) if we hit it.  Detect and skip or rename before writing.
-	// Re-open a separate handle for the check (createAutoSnapshot opens its own).
+	// conf set) if we hit it. Detect and rename before writing.
 	dbCheck, dbCheckErr := db.New()
 	if dbCheckErr == nil {
 		_ = dbCheck.Init()
@@ -384,38 +311,11 @@ func processAgents(
 	}
 	fmt.Println()
 
-	// 4. Persist redirect mappings to DB
-	for _, name := range redirectAgents {
-		redirects := model.ComputeRedirectMappings(name, upstreamModels)
-		if len(redirects) == 0 {
-			continue
-		}
-		for _, rm := range redirects {
-			pm := &db.ProxyModelMapping{
-				ProxyID:       proxyID,
-				AgentName:     name,
-				NativeModel:   rm.NativeModel,
-				UpstreamModel: rm.UpstreamID,
-				Reason:        rm.Reason,
-				CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-			}
-			if err := dbInst.UpsertProxyModelMapping(pm); err != nil {
-				fmt.Printf("  ⚠ %s 映射写入失败 (%s → %s): %v\n",
-					name, rm.NativeModel, rm.UpstreamID, err)
-			}
-		}
-		fmt.Printf("  ✅ %s: 已写入 %d 条重定向映射\n", name, len(redirects))
-	}
-	if len(redirectAgents) == 0 {
-		fmt.Println("  (无重定向 agent，跳过映射)")
-	}
-	fmt.Println()
-
-	// 5. Write config for custom-model agents
-	fmt.Println("正在配置自定义模型 agent...")
+	// Write config for each agent
+	fmt.Println("正在配置 agent...")
 	fmt.Println(strings.Repeat("-", 60))
 	registry := agent.NewWriterRegistry()
-	for _, name := range customAgents {
+	for _, name := range agentNames {
 		w := registry.Get(name)
 		if w == nil {
 			fmt.Printf("  [SKIP] %s: 不支持配置的 writer\n", name)
@@ -442,6 +342,7 @@ func processAgents(
 				continue
 			}
 			fmt.Printf("  [FAIL] %s: %v\n", name, err)
+			_ = err // captured for return
 			continue
 		}
 		fmt.Printf("  [OK] %s -> %s\n", name, bestModel)
@@ -452,32 +353,6 @@ func processAgents(
 	fmt.Printf("配置完成: %d 个成功\n", configured)
 	fmt.Printf("下次运行 'agent-nexus conf set' 将检测到这些配置。\n")
 	return configured, nil
-}
-
-// legacyProcess is now a no-op; the auto-detect path has been removed.
-// It is kept as a stub to avoid breaking imports.
-// legacyProcess is now a no-op; the auto-detect path has been removed.
-func legacyProcess(p *proxy.Proxy, upstreamModels []string, agentNames []string, dryRun bool) {
-}
-
-
-// getProxySource resolves a proxy from command-line flags or auto-detect.
-// (No longer used for DB; kept for backward compat when --url/--key are set.)
-func getProxySource(cliURL, cliKey string) (*proxy.Proxy, string, error) {
-	if cliURL != "" || cliKey != "" {
-		p, err := proxy.FromFlags(cliURL, cliKey)
-		if err != nil {
-			return nil, "flags", err
-		}
-		if p != nil {
-			return p, "flags", nil
-		}
-	}
-	p, err := proxy.Detect()
-	if err == nil && p != nil {
-		return p, "auto-detect", nil
-	}
-	return nil, "auto-detect", err
 }
 
 // createAutoSnapshot creates a DB-only snapshot of the configs about to be modified.
@@ -594,4 +469,33 @@ func parseModelsStr(input string) map[string]string {
 		}
 	}
 	return m
+}
+
+// containsString checks if name is in set.
+func containsString(name string, set []string) bool {
+	for _, n := range set {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// getProxySource resolves a proxy from command-line flags or auto-detect.
+// Returns the source label ("flags" or "auto-detect").
+func getProxySource(cliURL, cliKey string) (*proxy.Proxy, string, error) {
+	if cliURL != "" || cliKey != "" {
+		p, err := proxy.FromFlags(cliURL, cliKey)
+		if err != nil {
+			return nil, "flags", err
+		}
+		if p != nil {
+			return p, "flags", nil
+		}
+	}
+	p, err := proxy.Detect()
+	if err == nil && p != nil {
+		return p, "auto-detect", nil
+	}
+	return nil, "auto-detect", err
 }

@@ -654,28 +654,3 @@ func TestMaskKey_HidesFullKey(t *testing.T) {
 		}
 	}
 }
-
-// --- isCustomModelAgent regression tests ---
-
-func TestIsCustomModelAgent_ExcludesGemini(t *testing.T) {
-	if isCustomModelAgent("gemini") {
-		t.Error("isCustomModelAgent(gemini) = true, want false (gemini uses native protocol)")
-	}
-}
-
-func TestIsCustomModelAgent_IncludesKnownCustomAgents(t *testing.T) {
-	for _, name := range []string{"codex", "claude", "opencode", "openclaw", "openclaude", "kimi", "hermes"} {
-		if !isCustomModelAgent(name) {
-			t.Errorf("isCustomModelAgent(%s) = false, want true", name)
-		}
-	}
-}
-
-func TestIsCustomModelAgent_UnknownReturnsFalse(t *testing.T) {
-	if isCustomModelAgent("unknown-agent") {
-		t.Error("isCustomModelAgent(unknown-agent) = true, want false")
-	}
-	if isCustomModelAgent("") {
-		t.Error("isCustomModelAgent(\"\") = true, want false")
-	}
-}
