@@ -623,7 +623,6 @@ func initAgentCmd() {
 	agentCmd.AddCommand(agentUpdateCmd)
 	initModelsCmds()
 	agentCmd.AddCommand(agentModelsCmd)
-	proxyCmd.AddCommand(proxyModelsCmd)
 	confCmd.AddCommand(confModelsCmd)
 }
 
@@ -656,7 +655,7 @@ var proxyDetectCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Mode 1: --db flag → 从数据库读取
 		if proxyDetectDB != "" {
-			return runProxyModels(proxyDetectDB, proxyDetectVerbose)
+			return runProxyDetectDB(proxyDetectDB, proxyDetectVerbose)
 		}
 
 		// Mode 2: auto-detect 或 --url/--key
@@ -688,6 +687,46 @@ var proxyDetectCmd = &cobra.Command{
 	},
 }
 
+// runProxyDetectDB reads AI gateway records from the DB and displays them.
+func runProxyDetectDB(dbFlag string, verbose bool) error {
+	records, err := dbRecordsForID(dbFlag)
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		fmt.Println("数据库中没有任何代理配置记录。")
+		fmt.Println()
+		return nil
+	}
+
+	for i, rec := range records {
+		if len(records) > 1 {
+			fmt.Printf("代理配置 #%d  (共 %d 条):\n", rec.ID, len(records))
+		} else {
+			fmt.Printf("代理配置 #%d:\n", rec.ID)
+		}
+		fmt.Printf("  URL:       %s\n", rec.URL)
+		fmt.Printf("  格式:      %s\n", rec.DetectedFormat)
+		fmt.Printf("  模型数量:  %d\n", rec.ModelCount)
+
+		models, src, aerr := upstreamModelsForProxy(rec)
+		if aerr != nil {
+			fmt.Printf("  模型列表:  %s\n", aerr.Error())
+		} else {
+			fmt.Printf("  来源:      %s\n", src)
+			fmt.Printf("  模型列表 (%d):\n", len(models))
+			for _, m := range models {
+				fmt.Printf("    - %s\n", m)
+			}
+		}
+		if i < len(records)-1 {
+			fmt.Println(strings.Repeat("-", 60))
+		}
+	}
+	fmt.Println()
+	return nil
+}
+
 // runSniffAndSave 探测 AI 网关 endpoint，打印结果并自动保存到数据库
 func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 	result, err := sniff.Sniff(baseURL, apiKey)
@@ -698,8 +737,9 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 
 	fmt.Printf("嗅探结果: %s\n", result.BaseURL)
 	fmt.Printf("  检测格式: %s\n", result.DetectedFormat)
-	fmt.Printf("  OpenAI 兼容: %v\n", result.OpenAICap)
-	fmt.Printf("  Anthropic 兼容: %v\n", result.AnthropicCap)
+	for _, cap := range result.Caps {
+		fmt.Printf("  %s\n", cap.Label)
+	}
 	fmt.Printf("  模型数量: %d\n", result.ModelCount)
 	if result.Notes != "" {
 		fmt.Printf("  备注: %s\n", result.Notes)
@@ -751,7 +791,9 @@ func runSniffAndSave(baseURL, apiKey string, verbose bool) error {
 					for _, m := range result.Models {
 						modelIDs = append(modelIDs, m.ID)
 					}
-					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
+					openAICap := result.HasCap("📝 Chat Completions") || result.HasCap("🤖 OpenAI Responses")
+					anthCap := result.HasCap("💬 Anthropic Messages")
+					if addErr := dbInst.Add(result.BaseURL, apiKey, result.DetectedFormat, openAICap, anthCap, result.ModelCount, modelIDs, time.Now()); addErr != nil {
 						fmt.Printf("⚠ 保存失败: %v\n", addErr)
 					} else {
 						fmt.Printf("✅ 已保存到数据库: %s\n", result.BaseURL)
@@ -900,32 +942,7 @@ var proxyDetectVerbose bool
 var rmAll bool
 var checkAll bool
 
-var proxySniffCmd = &cobra.Command{
-	Use:    "sniff",
-	Hidden: true,
-	Short:  "[已弃用] 请使用 proxy detect --url <url> --key <key>",
-	Long: `嗅探 LLM 提供商的 endpoint，自动检测其支持的消息格式和可用模型列表。
-
-[已弃用] 推荐使用统一入口:
-  agent-nexus proxy detect --url <url> --key <key>
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// 委托给 proxy detect
-		proxyURL = sniffURL
-		proxyKey = sniffKey
-		proxyDetectVerbose = sniffVerbose
-		proxyDetectNoSniff = false
-		return proxyDetectCmd.RunE(cmd, args)
-	},
-}
-
 func initProxyCmd() {
-	proxySniffCmd.Flags().StringVar(&sniffURL, "url", "", "LLM provider endpoint URL（必选）")
-	proxySniffCmd.Flags().StringVar(&sniffKey, "key", "", "LLM provider API key（必选）")
-	proxySniffCmd.MarkFlagRequired("url")
-	proxySniffCmd.MarkFlagRequired("key")
-	proxySniffCmd.Flags().BoolVarP(&sniffVerbose, "verbose", "v", false, "显示每个模型的详细信息")
-
 	// proxy detect flags
 	proxyDetectCmd.Flags().StringVar(&proxyDetectDB, "db", "", "从数据库读取：<N>=指定id，all=全部")
 	proxyDetectCmd.Flags().BoolVar(&proxyDetectNoSniff, "no-sniff", false, "仅显示配置，不嗅探")
@@ -934,7 +951,6 @@ func initProxyCmd() {
 	proxyCmd.AddCommand(proxyDetectCmd)
 	proxyCmd.AddCommand(proxyRouteCmd)
 	proxyCmd.AddCommand(proxyCheckCmd)
-	proxyCmd.AddCommand(proxySniffCmd)
 
 	proxyCmd.AddCommand(&cobra.Command{
 		Use:           "db",

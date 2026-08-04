@@ -13,12 +13,26 @@ import (
 // SniffResult holds the outcome of a sniff operation.
 type SniffResult struct {
 	BaseURL        string
-	OpenAICap      bool
-	AnthropicCap   bool
 	ModelCount     int
 	Models         []ModelItem
 	DetectedFormat string
 	Notes          string
+	Caps           []ProtocolCap
+}
+
+// ProtocolCap describes one detected protocol.
+type ProtocolCap struct {
+	Label string
+}
+
+// HasCap returns true if the result contains the given protocol label.
+func (r *SniffResult) HasCap(label string) bool {
+	for _, c := range r.Caps {
+		if c.Label == label {
+			return true
+		}
+	}
+	return false
 }
 
 // ModelItem represents one model in the /v1/models list response.
@@ -27,7 +41,7 @@ type ModelItem struct {
 	Object  string                 `json:"object"`
 	Created int64                  `json:"created"`
 	OwnedBy string                 `json:"owned_by"`
-	Raw     map[string]interface{} `json:"-"` // extra provider-specific fields
+	Raw     map[string]interface{} `json:"-"`
 }
 
 // FormatVerbose returns a human-readable multi-line string of all known fields.
@@ -41,6 +55,7 @@ func (m *ModelItem) FormatVerbose() string {
 		lines = append(lines, fmt.Sprintf("    %-40s %s", "owner:", m.OwnedBy))
 	}
 	if m.Created > 0 {
+		_ = m.Created
 		lines = append(lines, fmt.Sprintf("    %-40s %s", "created:", time.Unix(m.Created, 0).Format("2006-01-02")))
 	}
 	for k, v := range m.Raw {
@@ -177,9 +192,10 @@ func Sniff(baseURL, apiKey string) (*SniffResult, error) {
 }
 
 // sniffPath probes a single base URL that is guaranteed to end with /v1.
-// All three probes (models, OpenAI chat, Anthropic messages) are always executed.
+// All protocol probes are always executed: models, OpenAI Chat, Anthropic Messages,
+// Gemini Generations, and OpenAI Responses.
 func sniffPath(baseURL, apiKey string) *SniffResult {
-		client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 
 	result := &SniffResult{
 		BaseURL: baseURL,
@@ -196,86 +212,116 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 			result.Models = models
 			fillExtraFields(models, modelsBody)
 			result.ModelCount = count
-			// Use the first real model from the list for subsequent probes.
 			testModel = models[0].ID
 			result.DetectedFormat = "OpenAI Compatible (models endpoint)"
 		}
 	}
 
 	if testModel == "" {
+		_ = result
 		testModel = "gpt-3.5-turbo"
 	}
 
-	// Probe 2: POST /v1/chat/completions — OpenAI format.
-	chatURL := baseURL + "/chat/completions"
+	notes := []string{}
+
+	// Build the chat request payload (used by multiple probes).
+	// NOTE: omit max_tokens — some providers (e.g. Sensenova) reject it.
 	chatReq := map[string]interface{}{
 		"model": testModel,
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": "say hello"},
 		},
-		"max_tokens": 4,
 	}
 	chatBody, _ := json.Marshal(chatReq)
-	chatResp, chatErr := doRequest(client, "POST", chatURL, apiKey, bytes.NewReader(chatBody))
 
+	// Probe 2: POST /v1/chat/completions — OpenAI Chat Completions.
+	chatURL := baseURL + "/chat/completions"
+	chatResp, chatErr := doRequest(client, "POST", chatURL, apiKey, bytes.NewReader(chatBody))
 	if chatErr != nil {
-		result.Notes = fmt.Sprintf("OpenAI chat 端点: %v", chatErr)
+		notes = append(notes, fmt.Sprintf("OpenAI chat 端点: %v", chatErr))
 	} else if len(chatResp) > 0 {
 		var ccr ChatCompletionResponse
 		if err := json.Unmarshal(chatResp, &ccr); err == nil && ccr.ID != "" {
-			result.OpenAICap = true
-			result.DetectedFormat += " + OpenAI chat completions"
+			_ = ccr
+			result.Caps = append(result.Caps, ProtocolCap{Label: "📝 Chat Completions"})
+			result.DetectedFormat += " + Chat Completions"
 		} else {
-			result.Notes = fmt.Sprintf("OpenAI chat 端点返回非标准响应: %s", truncate(string(chatResp), 120))
+			notes = append(notes, fmt.Sprintf("OpenAI chat 端点返回非标准响应: %s", truncate(string(chatResp), 120)))
 		}
 	}
 
-	// Probe 3: POST /v1/messages — Anthropic Messages API format.
+	// Probe 3: POST /v1/messages — Anthropic Messages API.
+	// NOTE: Anthropic Messages uses max_tokens, but we omit it since some
+	// providers proxying this path also reject it.
 	messagesURL := baseURL + "/messages"
 	msgsReq := map[string]interface{}{
 		"model": testModel,
-		"max_tokens": 4,
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": "say hello"},
 		},
 	}
 	msgsBody, _ := json.Marshal(msgsReq)
 	msgsResp, msgsErr := doRequest(client, "POST", messagesURL, apiKey, bytes.NewReader(msgsBody))
-
 	if msgsErr != nil {
-		if result.Notes != "" {
-			if strings.HasSuffix(result.Notes, "; ") {
-				result.Notes = result.Notes[:len(result.Notes)-2]
-			}
-			result.Notes += fmt.Sprintf("; Anthropic messages 端点: %v", msgsErr)
-		} else {
-			result.Notes = fmt.Sprintf("Anthropic messages 端点: %v", msgsErr)
-		}
+		notes = append(notes, fmt.Sprintf("Anthropic messages 端点: %v", msgsErr))
 	} else if len(msgsResp) > 0 {
 		var mr MessagesResponse
 		if err := json.Unmarshal(msgsResp, &mr); err == nil && mr.ID != "" {
-			result.AnthropicCap = true
-			result.DetectedFormat += " + Anthropic Messages API"
+			_ = mr
+			result.Caps = append(result.Caps, ProtocolCap{Label: "💬 Anthropic Messages"})
+			result.DetectedFormat += " + Anthropic Messages"
 		} else {
-			if result.Notes != "" {
-				if strings.HasSuffix(result.Notes, "; ") {
-					result.Notes = result.Notes[:len(result.Notes)-2]
-				}
-				result.Notes += fmt.Sprintf("; Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120))
-			} else {
-				result.Notes = fmt.Sprintf("Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120))
-			}
+			notes = append(notes, fmt.Sprintf("Anthropic messages 端点返回非标准响应: %s", truncate(string(msgsResp), 120)))
 		}
 	}
 
-	// If no formats detected at all, note it.
-	if result.ModelCount == 0 && result.OpenAICap == false && result.AnthropicCap == false {
+	// Probe 4: POST /v1/google/v1beta/generations — Gemini Generations.
+	geminiURL := baseURL + "/google/v1beta/generations"
+	geminiReq := map[string]interface{}{
+		"model":           testModel,
+		"maxOutputTokens": 4,
+		"contents":        []map[string]interface{}{{"parts": []map[string]interface{}{{"text": "say hello"}}}},
+	}
+	geminiBody, _ := json.Marshal(geminiReq)
+	_, geminiErr := doRequest(client, "POST", geminiURL, apiKey, bytes.NewReader(geminiBody))
+	if geminiErr != nil {
+		notes = append(notes, fmt.Sprintf("Gemini generations 端点: %v", geminiErr))
+	} else {
+		result.Caps = append(result.Caps, ProtocolCap{Label: "🔮 Gemini Generations"})
+		result.DetectedFormat += " + Gemini Generations"
+	}
+
+	// Probe 5: POST /v1/responses — OpenAI Responses API.
+	respURL := baseURL + "/responses"
+	respReq := map[string]interface{}{
+		"model": testModel,
+		"input": "say hello",
+		"text": map[string]interface{}{
+			"maxOutputTokens": 4,
+		},
+	}
+	respBody, _ := json.Marshal(respReq)
+	respResp, respErr := doRequest(client, "POST", respURL, apiKey, bytes.NewReader(respBody))
+	if respErr != nil {
+		notes = append(notes, fmt.Sprintf("OpenAI responses 端点: %v", respErr))
+	} else if len(respResp) > 0 {
+		var rr map[string]interface{}
+		if err := json.Unmarshal(respResp, &rr); err == nil && rr["id"] != nil {
+			_ = rr
+			result.Caps = append(result.Caps, ProtocolCap{Label: "🤖 OpenAI Responses"})
+			result.DetectedFormat += " + OpenAI Responses"
+		} else {
+			notes = append(notes, fmt.Sprintf("OpenAI responses 端点返回非标准响应: %s", truncate(string(respResp), 120)))
+		}
+	}
+
+	result.Notes = strings.Join(notes, "; ")
+
+	// If nothing detected, add a summary note.
+	if result.ModelCount == 0 && len(result.Caps) == 0 {
 		if result.Notes == "" {
 			result.Notes = "未从该 endpoint 探测到可用模型，可能是自定义格式或需要特殊认证"
-		} else if !strings.Contains(result.Notes, "未从该 endpoint") {
-			if strings.HasSuffix(result.Notes, "; ") {
-				result.Notes = result.Notes[:len(result.Notes)-2]
-			}
+		} else if !strings.Contains(result.Notes, "未探测到") {
 			result.Notes += "; 未探测到标准格式"
 		}
 	}
@@ -284,7 +330,7 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 }
 
 // doRequest performs an HTTP request and returns the response body bytes.
-func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([ ]byte, error) {
+func doRequest(client *http.Client, method, urlStr, apiKey string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequest(method, urlStr, body)
 	if err != nil {
 		return nil, err
@@ -340,7 +386,8 @@ func fillExtraFields(models []ModelItem, rawBody []byte) {
 		}
 		modelID, ok := m["id"].(string)
 		if !ok {
-			}
+			continue
+		}
 
 		extras := map[string]interface{}{}
 		for k, v := range m {
@@ -368,32 +415,32 @@ func truncate(s string, n int) string {
 // IsOpenAICompatible returns true if the sniff result indicates
 // the endpoint speaks an OpenAI-compatible protocol.
 func (r *SniffResult) IsOpenAICompatible() bool {
-	return r.OpenAICap || r.ModelCount > 0 || r.DetectedFormat != ""
+	return r.ModelCount > 0 || r.DetectedFormat != "" || r.HasCap("📝 Chat Completions")
 }
 
-// HasMultipleFormats returns true if both OpenAI and Anthropic formats are supported.
+// HasMultipleFormats returns true if multiple protocols are detected.
 func (r *SniffResult) HasMultipleFormats() bool {
-	return r.OpenAICap && r.AnthropicCap
+	return len(r.Caps) > 1
 }
 
 // UpstreamModelList fetches the list of available model IDs from the proxy's
 // /v1/models endpoint. Returns a slice of model IDs (empty slice on failure).
 // Pass the full base URL including /v1 (e.g. "http://127.0.0.1:3688/v1").
 func UpstreamModelList(baseURL, apiKey string) []string {
-    baseURL = strings.TrimSuffix(baseURL, "/")
-    if !strings.HasSuffix(baseURL, "/v1") {
-        baseURL += "/v1"
-    }
-    modelsURL := baseURL + "/models"
-    client := &http.Client{Timeout: 10 * time.Second}
-    body, err := doRequest(client, "GET", modelsURL, apiKey, nil)
-    if err != nil {
-        return nil
-    }
-    models, _ := parseModels(body)
-    ids := make([]string, 0, len(models))
-    for _, m := range models {
-        ids = append(ids, m.ID)
-    }
-    return ids
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if !strings.HasSuffix(baseURL, "/v1") {
+		baseURL += "/v1"
+	}
+	modelsURL := baseURL + "/models"
+	client := &http.Client{Timeout: 10 * time.Second}
+	body, err := doRequest(client, "GET", modelsURL, apiKey, nil)
+	if err != nil {
+		return nil
+	}
+	models, _ := parseModels(body)
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	return ids
 }

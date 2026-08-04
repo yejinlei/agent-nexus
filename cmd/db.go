@@ -68,7 +68,10 @@ var dbAddCmd = &cobra.Command{
 			modelIDs = append(modelIDs, m.ID)
 		}
 
-		if err := dbInst.Add(result.BaseURL, sniffKey, result.DetectedFormat, result.OpenAICap, result.AnthropicCap, result.ModelCount, modelIDs, time.Now()); err != nil {
+		openAICap := result.HasCap("📝 Chat Completions") || result.HasCap("🤖 OpenAI Responses")
+		anthCap := result.HasCap("💬 Anthropic Messages")
+
+		if err := dbInst.Add(result.BaseURL, sniffKey, result.DetectedFormat, openAICap, anthCap, result.ModelCount, modelIDs, time.Now()); err != nil {
 			fmt.Printf("保存到数据库失败: %v\n", err)
 			return err
 		}

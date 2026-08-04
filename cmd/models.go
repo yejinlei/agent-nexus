@@ -204,74 +204,6 @@ DEPRECATED：旧的 --name / 位置参数 仍可工作，但请使用 --agents�
 	},
 }
 
-// ---- PROXY MODELS ----
-
-var proxyModelsCmd = &cobra.Command{
-	Use:    "models --db <N|all>",
-	Hidden: true,
-	Short:  "[已弃用] 请使用 proxy detect --db <N|all>",
-	Long: `显示 AI 网关/厂家支持的大模型列表。
-
-[已弃用] 推荐使用统一入口:
-  agent-nexus proxy detect --db <N|all>
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		dbFlag := "1"
-		if proxyModelsDb != "" {
-			dbFlag = proxyModelsDb
-		}
-		return runProxyModels(dbFlag, proxyDetectVerbose)
-	},
-}
-
-// runProxyModels 从数据库读取并显示 AI 网关模型列表（统一供 proxy detect --db 和 proxy models 使用）。
-func runProxyModels(dbFlag string, verbose bool) error {
-	records, err := dbRecordsForID(dbFlag)
-	if err != nil {
-		return err
-	}
-	if len(records) == 0 {
-		fmt.Println("数据库中没有任何代理配置记录。")
-		fmt.Println()
-		return nil
-	}
-
-	for i, rec := range records {
-		if len(records) > 1 {
-			fmt.Printf("代理配置 #%d  (共 %d 条):\n", rec.ID, len(records))
-		} else {
-			fmt.Printf("代理配置 #%d:\n", rec.ID)
-		}
-		fmt.Printf("  URL:       %s\n", rec.URL)
-		fmt.Printf("  格式:      %s\n", rec.DetectedFormat)
-		fmt.Printf("  OpenAI:    %v\n", rec.OpenAICap)
-		fmt.Printf("  Anthropic: %v\n", rec.AnthropicCap)
-		fmt.Printf("  模型数量:  %d\n", rec.ModelCount)
-
-		models, src, aerr := upstreamModelsForProxy(rec)
-		if aerr != nil {
-			fmt.Printf("  模型列表:  %s\n", aerr.Error())
-		} else {
-			fmt.Printf("  来源:      %s\n", src)
-			fmt.Printf("  模型列表 (%d):\n", len(models))
-			for _, m := range models {
-				fmt.Printf("    - %s\n", m)
-			}
-		}
-		if i < len(records)-1 {
-			fmt.Println(strings.Repeat("-", 60))
-		}
-	}
-	fmt.Println()
-	return nil
-}
-
-var proxyModelsDb string
-
-func initProxyModels() {
-	proxyModelsCmd.Flags().StringVar(&proxyModelsDb, "db", "", "DB 记录 ID（默认 1），或用 all 显示全部")
-}
-
 // ---- CONF MODELS ----
 
 // MatchResult describes how one agent's default model aligns with upstream models.
@@ -447,8 +379,6 @@ var confModelsCmd = &cobra.Command{
 func initModelsCmds() {
 	agentModelsCmd.Flags().StringVar(&agentModelsAgents, "agents", "", "指定 agent（逗号分隔），用 all 表示全部（可选，默认显示已发现的 agent）")
 	agentModelsCmd.Flags().StringVarP(&agentModelsName, "name", "n", "", "[已弃用] 请使用 --agents")
-
-	initProxyModels()
 
 	confModelsCmd.Flags().StringVar(&confModelsAgents, "agents", "", "指定 agent（逗号分隔），用 all 表示全部（默认 all）")
 	confModelsCmd.Flags().StringVar(&confModelsDb, "db", "", "DB 记录 ID（默认 1），或用 all 显示全部")
