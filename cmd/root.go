@@ -965,16 +965,16 @@ func initProxyCmd() {
 
 var confCmd = &cobra.Command{
 	Use:   "conf",
-	Short: "配置管理（备份、快照、回滚、分支）",
-	Long: `配置管理命令组，用于备份、快照、回滚 agent 配置文件。
+	Short: "配置管理（统一配置入口、快照、恢复）",
+	Long: `配置管理命令组，用于统一配置 agent、备份和恢复配置文件。
 
 子命令：
-  bak       备份所有配置（创建快照）
-  history   列出所有配置快照
-  show      创建配置快照
-  rollback  恢复到指定快照
-  diff      对比两个快照的差异
-  branch    管理配置分支
+  set        统一配置入口（必须带 --db）
+  backup     手动备份所有/指定 agent 的配置文件（带名称）
+  list       列出所有配置快照（显示名称）
+  restore    按名称或 ID 恢复快照
+  migrate    从旧 versioning.json 导入快照到 DB
+  models     显示 agent 与 DB 记录中大模型的匹配情况
 `,
 }
 
