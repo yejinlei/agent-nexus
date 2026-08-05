@@ -41,15 +41,16 @@ func (w *codexWriter) Configure(path string, p *proxy.Proxy, model string) error
 
 	content :=
 		"openai_base_url = \"" + p.BaseURL + "\"\n" +
-			"model_provider = \"ccswitch\"\n" +
+			"model_provider = \"openai\"\n" +
 			"model = \"" + model + "\"\n" +
 			"\n" +
 			"[model_providers.ccswitch]\n" +
 			"name = \"Sensenova CC-Switch\"\n" +
 			"base_url = \"" + p.BaseURL + "\"\n" +
-			"api_key = \"" + p.APIKey + "\"\n" +
 			"wire_api = \"responses\"\n" +
-			"requires_openai_auth = false\n"
+			"requires_openai_auth = true\n" +
+			"\n" +
+			"api_key = \"" + p.APIKey + "\"\n"
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

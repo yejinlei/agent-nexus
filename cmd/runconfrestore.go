@@ -1,353 +1,333 @@
 package cmd
 
 import (
-    "fmt"
-    "os"
-    "path/filepath"
-    "strings"
-    "time"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
-    "agent-nexus/internal/db"
-    "agent-nexus/internal/discover"
-    "agent-nexus/internal/versioning"
-    "github.com/spf13/cobra"
+	"agent-nexus/internal/db"
+	"agent-nexus/internal/discover"
+	"github.com/spf13/cobra"
 )
 
 type runConfRestoreOpts struct {
-    snapshot string
-    agents   string
-    branch   string
-    message  string
+	snapshot string
+	agents   string
+	branch   string
+	message  string
 }
 
 var confRestoreCmd = &cobra.Command{
-    Use:   "restore <snapshot-id>",
-    Short: "从指定快照恢复配置文件",
-    Long: `从指定的历史快照恢复 agent 配置文件。
+	Use:   "restore <snapshot-id>",
+	Short: "从指定快照恢复配置文件",
+	Long: `从指定的历史快照恢复 agent 配置文件。
 
 功能：
   - 自动创建预恢复快照（安全网）
-  - 恢复失败时自动回滚
   - 支持从全局快照中提取单 agent 配置
-  - 同时写入 DB 和文件系统
-  - 支持恢复文件系统快照（versioning.json）和数据库快照（backup_snapshots）
+  - 所有快照统一存储在 DB
 
 用法：
   agent-nexus conf restore <snapshot-id>
   agent-nexus conf restore --snapshot latest
   agent-nexus conf restore --agents codex,claude <id>
 `,
-    RunE: func(cmd *cobra.Command, args []string) error {
-        opts := runConfRestoreOpts{
-            snapshot: crsSnapshot,
-            agents:   crsAgents,
-            branch:   crsBranch,
-            message:  crsMessage,
-        }
-        return runConfRestore(opts, args)
-    },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		opts := runConfRestoreOpts{
+			snapshot: crsSnapshot,
+			agents:   crsAgents,
+			branch:   crsBranch,
+			message:  crsMessage,
+		}
+		return runConfRestore(opts, args)
+	},
 }
 
 var (
-    crsSnapshot string
-    crsAgents   string
-    crsBranch   string
-    crsMessage  string
+	crsSnapshot string
+	crsAgents   string
+	crsBranch   string
+	crsMessage  string
 )
 
 func initConfRestoreCmd() {
-    rsFlags := confRestoreCmd.Flags()
-    rsFlags.StringVar(&crsSnapshot, "snapshot", "", "要恢复的快照 ID（或 'latest'），可用位置参数代替")
-    rsFlags.StringVar(&crsAgents, "agents", "", "仅恢复指定 agent（逗号分隔），留空恢复全部")
-    rsFlags.StringVar(&crsBranch, "branch", "main", "预恢复快照所属分支")
-    rsFlags.StringVar(&crsMessage, "message", "", "预恢复快照提交信息")
+	rsFlags := confRestoreCmd.Flags()
+	rsFlags.StringVar(&crsSnapshot, "snapshot", "", "要恢复的快照 ID（或 'latest'），可用位置参数代替")
+	rsFlags.StringVar(&crsAgents, "agents", "", "仅恢复指定 agent（逗号分隔），留空恢复全部")
+	rsFlags.StringVar(&crsBranch, "branch", "main", "预恢复快照所属分支")
+	rsFlags.StringVar(&crsMessage, "message", "", "预恢复快照提交信息")
 }
 
 // matchEntryByAgent returns true if the config entry belongs to one of the
-// requested agent names. It matches the agent substring against both the
-// original file path and the entry's map key (typically the file basename
-// or agent name), so a request for "codex" matches
-// "~/.codex/agents/codex/config.json".
+// requested agent names.
 func matchEntryByAgent(entryName, filePath string, agentNames []string) bool {
-    for _, rn := range agentNames {
-        if strings.Contains(entryName, rn) || strings.Contains(filePath, rn) {
-            return true
-        }
-    }
-    return false
+	for _, rn := range agentNames {
+		if strings.Contains(entryName, rn) || strings.Contains(filePath, rn) {
+			return true
+		}
+	}
+	return false
 }
 
 func runConfRestore(opts runConfRestoreOpts, args []string) error {
-    home := userHomeDir()
-    destRoot := filepath.Join(home, ".codex", "backups")
+	dbInst, dbErr := db.New()
+	if dbErr != nil {
+		return fmt.Errorf("数据库不可用（%v），请检查后重试", dbErr)
+	}
+	defer dbInst.Close()
+	if initErr := dbInst.Init(); initErr != nil {
+		return fmt.Errorf("数据库初始化失败: %w", initErr)
+	}
 
-    targetID := opts.snapshot
-    if targetID == "" && len(args) > 0 {
-        targetID = args[0]
-    }
-    if targetID == "" {
-        return fmt.Errorf("请指定快照 ID 或名称")
-    }
+	targetID := opts.snapshot
+	if targetID == "" && len(args) > 0 {
+		targetID = args[0]
+	}
+	if targetID == "" {
+		return fmt.Errorf("请指定快照 ID 或名称")
+	}
 
-    r := versioning.LoadRegistry(destRoot)
+	// Resolve "latest"
+	if strings.EqualFold(targetID, "latest") {
+		dbSnaps, _ := dbInst.ListSnapshots()
+		if len(dbSnaps) == 0 {
+			return fmt.Errorf("未找到任何快照")
+		}
+		targetID = dbSnaps[0].ID
+		fmt.Printf("自动选择最新快照: %s\n", targetID)
+	}
 
-    if strings.EqualFold(targetID, "latest") {
-        // Try to find the latest DB snapshot first; fall back to filesystem.
-        dbInst, dbErr := db.New()
-        var latestDB *db.BackupSnapshot
-        if dbErr == nil {
-            if initErr := dbInst.Init(); initErr == nil {
-                dbSnaps, _ := dbInst.ListSnapshots()
-                if len(dbSnaps) > 0 {
-                    latestDB = &dbSnaps[0]
-                }
-                dbInst.Close()
-            }
-        }
-        if latestDB != nil {
-            targetID = latestDB.ID
-            fmt.Printf("自动选择最新快照（DB）: %s\n", targetID)
-        } else {
-            latest := r.LatestSnapshot()
-            if latest == nil {
-                return fmt.Errorf("未找到任何快照")
-            }
-            targetID = latest.ID
-            fmt.Printf("自动选择最新快照（文件系统）: %s\n", targetID)
-        }
-    }
+	// Try to resolve by name first
+	s, _ := dbInst.GetSnapshot(targetID)
+	if s == nil {
+		s, _ = dbInst.GetSnapshotByName(targetID)
+		if s != nil {
+			fmt.Printf("按名称匹配快照: %s → %s\n", s.Name, s.ID)
+		}
+	}
 
-    // If targetID doesn't look like a snapshot ID (no UUID, no timestamp format),
-    // try to resolve it as a human-readable name from the DB.
-    if !strings.Contains(targetID, "-") {
-        dbInst, dbErr := db.New()
-        if dbErr == nil {
-            if initErr := dbInst.Init(); initErr == nil {
-                dbSnap, snapErr := dbInst.GetSnapshotByName(targetID)
-                if snapErr == nil && dbSnap != nil {
-                    fmt.Printf("按名称匹配快照: %s → %s\n", dbSnap.Name, dbSnap.ID)
-                    targetID = dbSnap.ID
-                }
-                dbInst.Close()
-            }
-        }
-    }
+	if s == nil {
+		return fmt.Errorf("快照 %s 不存在", targetID)
+	}
 
-    s := r.GetSnapshot(targetID)
-    if s == nil {
-        s, _ = loadSnapshotFromDB(targetID, destRoot)
-        if s == nil {
-            return fmt.Errorf("快照 %s 不存在", targetID)
-        }
-        fmt.Printf("快照 %s 来自数据库\n", targetID)
-    }
+	fmt.Printf("\n恢复到快照: %s (分支: %s)\n", s.ID, s.Branch)
+	fmt.Printf("提交信息: %s\n", s.Message)
+	fmt.Printf("名称: %s\n", s.Name)
+	fmt.Println(strings.Repeat("-", 60))
 
-    fmt.Printf("\n恢复到快照: %s (分支: %s)\n", s.ID, s.Branch)
-    fmt.Printf("提交信息: %s\n", s.Message)
-    fmt.Println(strings.Repeat("-", 60))
+	var restoreNames []string
+	if opts.agents != "" {
+		restoreNames = parseRestoreAgentList(opts.agents)
+		fmt.Printf("  仅恢复 agent: %s\n", strings.Join(restoreNames, ", "))
+	}
 
-    var restoreNames []string
-    if opts.agents != "" {
-        restoreNames = parseRestoreAgentList(opts.agents)
-        fmt.Printf("  仅恢复 agent: %s\n", strings.Join(restoreNames, ", "))
-    }
+	// Get entries from DB
+	entries, err := dbInst.GetEntriesBySnapshot(s.ID)
+	if err != nil {
+		return fmt.Errorf("读取快照内容失败: %w", err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("快照 %s 中无配置文件", s.ID)
+	}
 
-    // Collect the config paths that will be restored (same match logic as
-    // the write-back loop below) so the pre-restore snapshot covers exactly
-    // the files about to be overwritten.
-    configPaths := collectRestorePaths(s, restoreNames)
+	// --- Pre-restore snapshot: capture current files, write to DB ---
+	preSnapID := ""
+	allAgents := discover.Discover()
+	nameToAgent := make(map[string]discover.AgentInfo)
+	for _, a := range allAgents {
+		nameToAgent[a.Name] = a
+	}
 
-    preRestoreMessage := fmt.Sprintf("预恢复快照: conf restore %s", targetID)
-    if opts.message != "" {
-        preRestoreMessage = opts.message
-    }
+	// Collect file paths that will be restored (same as write-back loop below)
+	preConfigPaths := collectRestorePaths(entries, restoreNames)
+	if len(preConfigPaths) > 0 {
+		preSnapshotName := fmt.Sprintf("pre-restore-%s", time.Now().Format("2006-01-02_15-04-05.000"))
+		preMessage := "预恢复快照（安全网，用于失败回滚）"
+		if opts.message != "" {
+			preMessage = opts.message
+		}
+		fmt.Println("创建预恢复快照（恢复前当前文件内容，用于失败回滚）...")
+		snapshotUUID, preErr := createPreRestoreSnapshot(preConfigPaths, preMessage, opts.branch, preSnapshotName, nameToAgent, dbInst)
+		if preErr != nil {
+			fmt.Printf("  [WARNING] 创建预恢复快照失败: %v\n", preErr)
+		} else {
+			preSnapID = snapshotUUID
+			fmt.Printf("  预恢复快照: %s (名称: %s, 分支: %s)\n", snapshotUUID, preSnapshotName, opts.branch)
+		}
+	}
 
-    fmt.Println("创建预恢复快照（恢复前当前文件内容，用于失败回滚）...")
-    preSnap, err := r.CreateSnapshot(configPaths, preRestoreMessage, opts.branch, "")
-    if err != nil {
-        fmt.Printf("  [WARNING] 创建预恢复快照失败: %v\n", err)
-    } else {
-        fmt.Printf("  预恢复快照: %s (分支: %s)\n", preSnap.ID, preSnap.Branch)
-    }
+	// --- Restore: write DB content back to files ---
+	var restoredFiles []string
+	var restoreErrors []string
 
-    var restoredFiles []string
-    var restoreErrors []string
+	// Sort entries for deterministic output
+	sort.Slice(entries, func(i, j int) bool { return entries[i].FileBasename < entries[j].FileBasename })
 
-    for name, entry := range s.Configs {
-        if entry.Error != "" {
-            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 未捕获 (%s)", name, entry.Error))
-            continue
-        }
+	for _, e := range entries {
+		if e.Error != "" {
+			restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 未捕获 (%s)", e.FileBasename, e.Error))
+			continue
+		}
+		if len(restoreNames) > 0 && !matchEntryByAgent(e.FileBasename, e.FilePath, restoreNames) {
+			continue
+		}
+		if e.FileContent == "" || e.FilePath == "" {
+			restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 内容为空", e.FileBasename))
+			continue
+		}
 
-        if len(restoreNames) > 0 && !matchEntryByAgent(name, entry.FilePath, restoreNames) {
-            continue
-        }
+		dir := filepath.Dir(e.FilePath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 创建目录失败 %s: %v", e.FileBasename, dir, err))
+			continue
+		}
+		if err := os.WriteFile(e.FilePath, []byte(e.FileContent), 0644); err != nil {
+			restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 写入失败: %v", e.FileBasename, err))
+			continue
+		}
 
-        if entry.Contents == "" || entry.FilePath == "" {
-            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 内容为空", name))
-            continue
-        }
+		restoredFiles = append(restoredFiles, e.FilePath)
+		fmt.Printf("  ✅ %s → %s\n", e.FileBasename, e.FilePath)
+	}
 
-        dir := filepath.Dir(entry.FilePath)
-        if err := os.MkdirAll(dir, 0755); err != nil {
-            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 创建目录失败 %s: %v", name, dir, err))
-            continue
-        }
+	// --- Post-restore snapshot (audit trail) ---
+	if len(restoredFiles) > 0 {
+		_ = createPostRestoreSnapshot(restoredFiles, nameToAgent, targetID, len(restoredFiles), dbInst)
+	}
 
-        if err := os.WriteFile(entry.FilePath, []byte(entry.Contents), 0644); err != nil {
-            restoreErrors = append(restoreErrors, fmt.Sprintf("%s: 写入失败: %v", name, err))
-            continue
-        }
+	// --- Rollback on failure ---
+	if len(restoredFiles) > 0 && len(restoreErrors) > 0 && preSnapID != "" {
+		fmt.Println("检测到恢复失败，正在回滚到恢复前的文件状态...")
+		preEntries, preErr := dbInst.GetEntriesBySnapshot(preSnapID)
+		rollErrors := 0
+		if preErr == nil {
+			for _, e := range preEntries {
+				if e.FileContent == "" || e.FilePath == "" {
+					continue
+				}
+				dir := filepath.Dir(e.FilePath)
+				if mkErr := os.MkdirAll(dir, 0755); mkErr == nil {
+					_ = os.WriteFile(e.FilePath, []byte(e.FileContent), 0644)
+				}
+			}
+		} else {
+			rollErrors++
+		}
+		if preErr != nil || rollErrors > 0 {
+			fmt.Printf("  ⚠ 回滚部分失败（预恢复快照不可用）\n")
+		} else {
+			fmt.Printf("已回滚到预恢复快照: %s\n", preSnapID)
+		}
+	}
 
-        restoredFiles = append(restoredFiles, entry.FilePath)
-        fmt.Printf("  ✅ %s → %s\n", name, entry.FilePath)
-    }
+	fmt.Printf("\n✅ 已恢复 %d 个配置文件\n", len(restoredFiles))
+	if len(restoreErrors) > 0 {
+		fmt.Printf("\n⚠ %d 个文件恢复失败:\n", len(restoreErrors))
+		for _, e := range restoreErrors {
+			fmt.Printf("  %s\n", e)
+		}
+		return fmt.Errorf("部分文件恢复失败")
+	}
 
-    dbInst, dbErr := db.New()
-    if dbErr == nil {
-        defer dbInst.Close()
-        _ = dbInst.Init()
-        if preSnap != nil && len(restoredFiles) > 0 {
-            // Write a real post-restore audit snapshot capturing the on-disk
-            // state of the agents that were just restored, so the DB history
-            // reflects what is currently on disk.
-            allAgents := discover.Discover()
-            nameToAgent := make(map[string]discover.AgentInfo)
-            for _, a := range allAgents {
-                nameToAgent[a.Name] = a
-            }
-            // Build the list of agent names whose config we restored.
-            restoredNames := make(map[string]bool)
-            for _, p := range restoredFiles {
-                base := filepath.Base(p)
-                for name := range nameToAgent {
-                    if strings.Contains(base, strings.ToLower(name)) {
-                        restoredNames[name] = true
-                    }
-                }
-            }
-            var names []string
-            for n := range restoredNames {
-                names = append(names, n)
-            }
-            _, _ = createAutoSnapshot(
-                names,
-                nameToAgent,
-                fmt.Sprintf("post-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
-                fmt.Sprintf("恢复快照: conf restore %s（%d 文件）", targetID, len(restoredFiles)),
-            )
-        }
-    }
-
-    fmt.Printf("\n✅ 已恢复 %d 个配置文件\n", len(restoredFiles))
-    if len(restoreErrors) > 0 {
-        fmt.Printf("\n⚠ %d 个文件恢复失败:\n", len(restoreErrors))
-        for _, e := range restoreErrors {
-            fmt.Printf("  %s\n", e)
-        }
-        if preSnap != nil {
-            fmt.Println("检测到恢复失败，正在回滚到恢复前的文件状态...")
-            _, _ = r.RestoreSnapshot(preSnap.ID)
-            fmt.Printf("已回滚到预恢复快照: %s\n", preSnap.ID)
-        }
-        return fmt.Errorf("部分文件恢复失败，已自动回滚")
-    }
-
-    fmt.Printf("\n恢复完成。使用 'agent-nexus conf list' 查看版本历史。\n")
-    return nil
+	fmt.Printf("\n恢复完成。使用 'agent-nexus conf list' 查看版本历史。\n")
+	return nil
 }
 
-// collectRestorePaths returns the file paths that the write-back loop will
-// restore, using the same match logic. These paths are snapshotted before any
-// file is overwritten so rollback restores the on-disk pre-restore state.
-func collectRestorePaths(s *versioning.Snapshot, restoreNames []string) []string {
-    var paths []string
-    for name, entry := range s.Configs {
-        if entry.Error != "" || entry.Contents == "" || entry.FilePath == "" {
-            continue
-        }
-        if len(restoreNames) > 0 && !matchEntryByAgent(name, entry.FilePath, restoreNames) {
-            continue
-        }
-        paths = append(paths, entry.FilePath)
-    }
-    return paths
+// createPreRestoreSnapshot captures current on-disk config state into a DB snapshot.
+func createPreRestoreSnapshot(
+	configPaths []string,
+	message, branch, name string,
+	nameToAgent map[string]discover.AgentInfo,
+	dbInst *db.DB,
+) (string, error) {
+	var entries []db.BackupConfigEntry
+	for _, path := range configPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			entries = append(entries, db.BackupConfigEntry{
+				AgentName:    inferAgentName(path, nameToAgent),
+				FilePath:     path,
+				FileBasename: filepath.Base(path),
+				Error:        err.Error(),
+			})
+			continue
+		}
+		entries = append(entries, db.BackupConfigEntry{
+			AgentName:    inferAgentName(path, nameToAgent),
+			FilePath:     path,
+			FileBasename: filepath.Base(path),
+			FileContent:  string(data),
+		})
+	}
+	return dbInst.CreateSnapshotAutoID("global", "ALL", branch, message, name, nil, entries)
 }
 
-// loadSnapshotFromDB reads a snapshot that lives only in the DB and converts
-// it into a versioning.Snapshot so the same filesystem restore loop can handle
-// both snapshot sources.
-func loadSnapshotFromDB(targetID, destRoot string) (*versioning.Snapshot, error) {
-    dbInst, dbErr := db.New()
-    if dbErr != nil {
-        return nil, dbErr
-    }
-    defer dbInst.Close()
-    if initErr := dbInst.Init(); initErr != nil {
-        return nil, initErr
-    }
+// createPostRestoreSnapshot writes an audit snapshot of restored files to DB.
+func createPostRestoreSnapshot(
+	restoredFiles []string,
+	nameToAgent map[string]discover.AgentInfo,
+	sourceID string,
+	restoreCount int,
+	dbInst *db.DB,
+) error {
+	var entries []db.BackupConfigEntry
+	for _, p := range restoredFiles {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, db.BackupConfigEntry{
+			AgentName:    inferAgentName(p, nameToAgent),
+			FilePath:     p,
+			FileBasename: filepath.Base(p),
+			FileContent:  string(data),
+		})
+	}
+	if len(entries) > 0 {
+		_, _ = dbInst.CreateSnapshotAutoID(
+			"global", "ALL", "main",
+			fmt.Sprintf("恢复快照: conf restore %s（%d 文件）", sourceID, restoreCount),
+			fmt.Sprintf("post-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
+			nil, entries,
+		)
+	}
+	return nil
+}
 
-    dbSnap, err := dbInst.GetSnapshot(targetID)
-    if err != nil || dbSnap == nil {
-        return nil, err
-    }
-
-    entries, err := dbInst.GetEntriesBySnapshot(targetID)
-    if err != nil {
-        return nil, err
-    }
-
-    var ts time.Time
-    if t, parseErr := time.Parse(time.RFC3339, dbSnap.CreatedAt); parseErr == nil {
-        ts = t
-    }
-
-    s := &versioning.Snapshot{
-        ID:        dbSnap.ID,
-        Branch:    dbSnap.Branch,
-        Message:   dbSnap.Message,
-        CreatedAt: ts,
-        Configs:   make(map[string]versioning.ConfigEntry),
-    }
-
-    for _, e := range entries {
-        key := e.FileBasename
-        if key == "" {
-            key = e.AgentName
-        }
-        s.Configs[key] = versioning.ConfigEntry{
-            FilePath: e.FilePath,
-            Contents: e.FileContent,
-            SHA256:   e.SHA256,
-            Bytes:    e.FileSize,
-            Error:    e.Error,
-        }
-    }
-
-    return s, nil
+func collectRestorePaths(entries []db.BackupConfigEntry, restoreNames []string) []string {
+	var paths []string
+	for _, e := range entries {
+		if e.FileContent == "" || e.FilePath == "" {
+			continue
+		}
+		if len(restoreNames) > 0 && !matchEntryByAgent(e.FileBasename, e.FilePath, restoreNames) {
+			continue
+		}
+		paths = append(paths, e.FilePath)
+	}
+	return paths
 }
 
 func parseRestoreAgentList(s string) []string {
-    var names []string
-    for _, n := range strings.Split(s, ",") {
-        n = strings.TrimSpace(n)
-        if n != "" {
-            names = append(names, n)
-        }
-    }
-    return names
+	var names []string
+	for _, n := range strings.Split(s, ",") {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
-// extractAgentName infers an agent name from a config file path by checking
-// for known agent keywords. Used by conf migrate when importing legacy snapshots.
-func extractAgentName(path string) string {
-    base := filepath.Base(path)
-    ext := filepath.Ext(base)
-    name := strings.TrimSuffix(base, ext)
-    for _, known := range []string{"codex", "claude", "kimi", "opencode", "openclaw", "cursor", "hermes", "gemini", "openclaude"} {
-        if strings.Contains(strings.ToLower(name), known) {
-            return known
-        }
-    }
-    return name
+// inferAgentName guesses the agent name from a config file path.
+func inferAgentName(path string, nameToAgent map[string]discover.AgentInfo) string {
+	for name := range nameToAgent {
+		if strings.Contains(strings.ToLower(path), strings.ToLower(name)) {
+			return name
+		}
+	}
+	return ""
 }
