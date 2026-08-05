@@ -36,6 +36,16 @@ func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) erro
 	}
 	env["ANTHROPIC_BASE_URL"] = strings.TrimSuffix(p.BaseURL, "/v1")
 	env["ANTHROPIC_AUTH_TOKEN"] = p.APIKey
+
+	// Per-tier model mappings: Claude CLI uses these to translate its
+	// internal "opus / sonnet / haiku" tiers to the real upstream model
+	// name. Without them, a tier switch sends an unknown model name to the
+	// proxy and 404s.
+	for _, tier := range []string{"OPUS", "SONNET", "HAIKU"} {
+		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"]     = model
+		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL_NAME"] = model
+	}
+
 	cfg["env"] = env
 	cfg["model"] = model
 	cfg["effortLevel"] = "high"

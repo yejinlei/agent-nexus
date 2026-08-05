@@ -49,10 +49,10 @@ func (w *hermesWriter) Configure(path string, p *proxy.Proxy, model string) erro
 
 	// Build the model block that Hermes expects.
 	newModelBlock := "model:\n" +
-		"  default: " + model + "\n" +
+		"  default: \"" + model + "\"\n" +
 		"  provider: custom\n" +
-		"  base_url: " + p.BaseURL + "\n" +
-		"  api_key: " + p.APIKey + "\n" +
+		"  base_url: \"" + p.BaseURL + "\"\n" +
+		"  api_key: \"" + p.APIKey + "\"\n" +
 		"  api_mode: chat_completions\n"
 
 	// Replace any existing "model:" block (from column 0 through the next

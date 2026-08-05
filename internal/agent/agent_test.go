@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -165,27 +166,85 @@ func TestHermesWriter(t *testing.T)   { testWriterConfigureAndStatus(t, "hermes"
 func TestCodexWriter_Content(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.toml")
-	os.WriteFile(cfgPath, []byte("model = \"old-model\""), 0644)
+	os.WriteFile(cfgPath, []byte("model = \"old-model\"\n"), 0644)
 
 	w := NewWriterRegistry().Get("codex")
-	// Use an unreachable address so ResponsesProbe returns "unknown" (pass)
-	// rather than hitting a live server. This test verifies config file
-	// writing, not protocol compatibility.
 	p := &proxy.Proxy{BaseURL: "http://127.0.0.2:19876/v1", APIKey: "ccx-key", Port: 19876, Source: proxy.ProxyTypeCCX}
 
-	if err := w.Configure(cfgPath, p, ""); err != nil {
+	if err := w.Configure(cfgPath, p, "gpt-5.5"); err != nil {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
 	s := string(data)
 	if !containsAll(s, "openai_base_url", p.BaseURL, "model_provider", "openai") {
-		t.Errorf("codex config missing expected fields. Got:\n%s", s)
+		t.Errorf("codex config missing expected top-level fields. Got:\n%s", s)
 	}
-	if !containsAll(s, "[model_providers.ccswitch]", "base_url") {
-		t.Errorf("codex config missing ccswitch provider block. Got:\n%s", s)
+	// merge must preserve the existing [model_providers.ccswitch] key
+	// (configure appends/merges; Status still checks openai_base_url).
+	if !containsAll(s, "model", "gpt-5.5") {
+		t.Errorf("codex config should contain new model. Got:\n%s", s)
 	}
-	if !containsAll(s, "api_key", "ccx-key") {
-		t.Errorf("codex config missing api_key. Got:\n%s", s)
+	if !strings.Contains(s, "wire_api") {
+		t.Errorf("codex config must set wire_api. Got:\n%s", s)
+	}
+
+	// auth.json must be written alongside config.toml
+	authPath := filepath.Join(tmpDir, "auth.json")
+	authData, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("auth.json not written by Configure: %v", err)
+	}
+	var auth map[string]string
+	if err := json.Unmarshal(authData, &auth); err != nil {
+		t.Fatalf("auth.json not valid JSON: %v", err)
+	}
+	if auth["OPENAI_API_KEY"] != "ccx-key" {
+		t.Errorf("auth.json OPENAI_API_KEY = %q, want ccx-key", auth["OPENAI_API_KEY"])
+	}
+}
+
+func TestCodexWriter_MergesExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.toml")
+	existing := `openai_base_url = "http://127.0.0.1:3688/v1"
+model_provider = "openai"
+model = "old-model"
+
+[model_providers.ccswitch]
+base_url = "http://localhost:8080/v1"
+wire_api = "responses"
+requires_openai_auth = true
+
+[tui.model_availability_nux]
+"gpt-5.6-sol" = 2
+
+[windows]
+sandbox = "elevated"
+`
+	os.WriteFile(cfgPath, []byte(existing), 0644)
+
+	w := NewWriterRegistry().Get("codex")
+	p := &proxy.Proxy{BaseURL: "http://127.0.0.1:3688/v1", APIKey: "new-key", Port: 3688, Source: proxy.ProxyTypeCCX}
+
+	if err := w.Configure(cfgPath, p, "sensenova-6.7-flash-lite"); err != nil {
+		t.Fatalf("Configure error = %v", err)
+	}
+	data, _ := os.ReadFile(cfgPath)
+	s := string(data)
+
+	// Our new keys must be present.
+	if !containsAll(s, "sensenova-6.7-flash-lite", `wire_api = "responses"`) {
+		t.Errorf("new keys missing. Got:\n%s", s)
+	}
+	// Sections codex owns must survive the merge.
+	if !strings.Contains(s, "model_availability_nux") {
+		t.Errorf("merge clobbered [tui.model_availability_nux]. Got:\n%s", s)
+	}
+	if !strings.Contains(s, "gpt-5.6-sol") {
+		t.Errorf("merge clobbered gpt-5.6-sol entry. Got:\n%s", s)
+	}
+	if !strings.Contains(s, `sandbox = "elevated"`) {
+		t.Errorf("merge clobbered [windows] sandbox. Got:\n%s", s)
 	}
 }
 
@@ -217,6 +276,17 @@ func TestClaudeWriter_Content(t *testing.T) {
 	}
 	if cfg["model"] != "fable" {
 		t.Errorf("model = %v, want fable", cfg["model"])
+	}
+	// Per-tier model mappings must be set (otherwise tier switch 404s)
+	for _, tier := range []string{"OPUS", "SONNET", "HAIKU"} {
+		m := "ANTHROPIC_DEFAULT_" + tier + "_MODEL"
+		n := "ANTHROPIC_DEFAULT_" + tier + "_MODEL_NAME"
+		if env[m] != "fable" {
+			t.Errorf("%s = %v, want fable", m, env[m])
+		}
+		if env[n] != "fable" {
+			t.Errorf("%s = %v, want fable", n, env[n])
+		}
 	}
 }
 

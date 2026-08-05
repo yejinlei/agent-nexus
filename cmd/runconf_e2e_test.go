@@ -140,13 +140,18 @@ func TestConfRestore_DB_Snapshot(t *testing.T) {
 	_, cleanup := setupTestHome(t)
 	defer cleanup()
 	cfgPath := createTestConfigFile(t.TempDir(), "test.toml", "original")
+	// Use a dedicated temp DB file to avoid UNIQUE constraint collisions with other tests
+	dbPath := filepath.Join(t.TempDir(), "proxies.db")
+	origEnv := os.Getenv("AGENT_NEXUS_DB_PATH")
+	os.Setenv("AGENT_NEXUS_DB_PATH", dbPath)
+	defer os.Setenv("AGENT_NEXUS_DB_PATH", origEnv)
 	dbInst, dbErr := db.New()
 	if dbErr != nil {
-		t.Fatalf("DB not available: %v", dbErr)
+		t.Fatalf("db.New() failed: %v", dbErr)
 	}
 	defer dbInst.Close()
 	_ = dbInst.Init()
-	snapID, err := dbInst.CreateSnapshotAutoID("global", "ALL", "main", "test restore", "test-snap", nil, []db.BackupConfigEntry{
+	snapID, err := dbInst.CreateSnapshotAutoID("global", "ALL", "main", "test restore", "test-restore", nil, []db.BackupConfigEntry{
 		{AgentName: "codex", FilePath: cfgPath, FileBasename: "test.toml", FileContent: "original"},
 	})
 	if err != nil {

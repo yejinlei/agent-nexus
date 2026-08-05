@@ -311,13 +311,29 @@ func sniffPath(baseURL, apiKey string) *SniffResult {
 	}
 
 	// Probe 5: POST /v1/responses — OpenAI Responses API.
-	// The Responses protocol requires "input" to be an array of InputItem objects,
-	// not a raw string: [{"type":"message","role":"user","content":"..."}].
+	// The standard OpenAI Responses schema (platform.openai.com/docs/api-reference/responses)
+	// requires "input" to be an array of InputItem objects, each with a "content"
+	// array of ContentBlock objects, e.g.
+	//   {
+	//     "model": "<model>",
+	//     "input": [
+	//       { "type": "message", "role": "user",
+	//         "content": [{ "type": "input_text", "text": "say hello" }] }
+	//     ]
+	//   }
+	// A bare string "input": "say hello" is rejected by strict gateways
+	// (e.g. SenseNova 9090) with HTTP 400.
 	respURL := baseURL + "/responses"
 	respReq := map[string]interface{}{
 		"model": testModel,
 		"input": []map[string]interface{}{
-			{"type": "message", "role": "user", "content": "say hello"},
+			{
+				"type": "message",
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "input_text", "text": "say hello"},
+				},
+			},
 		},
 	}
 	respBody, _ := json.Marshal(respReq)
@@ -458,9 +474,20 @@ func ResponsesProbe(baseURL, apiKey string) bool {
 	if !strings.HasSuffix(baseURL, "/v1") {
 		baseURL += "/v1"
 	}
+	// Standard OpenAI Responses schema: input is an array of InputItem
+	// objects, each with content as an array of ContentBlock objects.
+	// A bare string is rejected by strict gateways (HTTP 400).
 	respReq := map[string]interface{}{
 		"model": "gpt-4o",
-		"input": "say hello",
+		"input": []map[string]interface{}{
+			{
+				"type": "message",
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "input_text", "text": "say hello"},
+				},
+			},
+		},
 	}
 	reqBody, err := json.Marshal(respReq)
 	if err != nil {
