@@ -279,11 +279,12 @@ func Discover() []AgentInfo {
 			if candidate != "" && r.UninstallPaths != nil {
 				for _, rel := range r.UninstallPaths {
 					p := filepath.Join(home, rel)
-					if info, err := os.Stat(p); err == nil && info.IsDir() {
+					if st, err := os.Stat(p); err == nil && st.IsDir() {
 						// Directory exists (agent installed). Set the expected
 						// config file path so conf set can write to it.
 						configPath = candidate
 						fileFound = true
+						isInstalled = true
 						break
 					}
 				}
@@ -319,7 +320,13 @@ func Discover() []AgentInfo {
 			}
 		}
 
-		info.IsInstalled = info.IsInstalled || fileFound
+		// NOTE: IsInstalled is set only by concrete-evidence checks above:
+		// (a) real HomeDirFiles config found → isInstalled=true at L253,
+		// (b) uninstall-directory heuristic below sets isInstalled=true,
+		// (c) binary located in PATH → L318.
+		// "fileFound" is NOT folded here — it may be true from a synthetic
+		// candidate path (used by conf set to write a new config) which does
+		// not prove the runtime is installed.
 
 		results = append(results, info)
 	}
