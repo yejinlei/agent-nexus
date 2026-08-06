@@ -172,12 +172,13 @@ func RenderModelTable(agents []AgentInfo) {
 type AgentInfo struct {
 	Name           string
 	Category       string
-	HasConfig      bool
-	ConfigPath     string
-	IsConfigured   bool
-	IsConfigurable bool
-	Protocol       string
-	Notes          string
+	HasConfig      bool   // a configuration file was found (Stage 1/2 file, or binary in PATH)
+	ConfigPath     string // absolute path to the configuration file
+	IsConfigured   bool   // config file exists AND contains a known proxy URL
+	IsConfigurable bool   // this agent can be configured by agent-nexus (in shared.DefaultModels)
+	Protocol       string // "openai" or "acp" — the protocol the agent runtime expects
+	Notes          string // human-readable note / warning
+	IsInstalled    bool   // runtime itself is present: real config file, non-empty home dir, or binary in PATH
 }
 
 type AgentRegistry struct {
@@ -241,23 +242,25 @@ func Discover() []AgentInfo {
 		}
 
 		var configPath string
-		var found bool
+		var fileFound bool   // a real config FILE was found (Stage 1/2)
+		var isInstalled bool // the runtime itself is present on disk/PATH
 
 		for _, rel := range ap.HomeDirFiles {
 			p := filepath.Join(home, rel)
 			if _, err := os.Stat(p); err == nil {
 				configPath = p
-				found = true
+				fileFound = true
+				isInstalled = true
 				break
 			}
 		}
 
-		if !found {
+		if !fileFound {
 			for _, rel := range ap.ConfigFiles {
 				p := filepath.Join(roaming, rel)
 				if _, err := os.Stat(p); err == nil {
 					configPath = p
-					found = true
+					fileFound = true
 					break
 				}
 			}
@@ -266,7 +269,7 @@ func Discover() []AgentInfo {
 		// Fallback: when no config file exists but the agent is installed,
 		// set configPath to the expected config file (needed by conf set to
 		// create/write the file). Check by directory existence, not file.
-		if !found && ap.IsConfigurable {
+		if !fileFound && ap.IsConfigurable {
 			var candidate string
 			if len(ap.HomeDirFiles) > 0 {
 				candidate = filepath.Join(home, ap.HomeDirFiles[0])
@@ -280,38 +283,43 @@ func Discover() []AgentInfo {
 						// Directory exists (agent installed). Set the expected
 						// config file path so conf set can write to it.
 						configPath = candidate
-						found = true
+						fileFound = true
 						break
 					}
 				}
 			}
 			// If no uninstall path but we have a binary, still set the
 			// expected config path so conf set can create the file.
-			if !found && ap.BinaryName != "" && candidate != "" {
+			if !fileFound && ap.BinaryName != "" && candidate != "" {
 				configPath = candidate
-				found = true
+				fileFound = true
 			}
 		}
 
 		info := AgentInfo{
 			Name:           r.Name,
 			Category:       r.Category,
-			HasConfig:      found,
+			HasConfig:      fileFound,
 			ConfigPath:     configPath,
+			IsConfigured:   false,
 			IsConfigurable: ap.IsConfigurable,
 			Protocol:       protocolMap[r.Name],
 			Notes:          ap.Notes,
+			IsInstalled:    isInstalled,
 		}
 
-		if found && ap.IsConfigurable {
+		if fileFound && ap.IsConfigurable {
 			info.IsConfigured = checkConfigured(configPath)
 		}
 
 		if !info.HasConfig && ap.BinaryName != "" {
 			if _, err := exec.LookPath(ap.BinaryName); err == nil {
 				info.HasConfig = true
+				info.IsInstalled = true
 			}
 		}
+
+		info.IsInstalled = info.IsInstalled || fileFound
 
 		results = append(results, info)
 	}
