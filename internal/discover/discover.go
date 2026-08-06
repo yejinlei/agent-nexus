@@ -434,7 +434,7 @@ func RenderTable(agents []AgentInfo) {
 
 	for _, a := range agents {
 		installed := "Installed"
-		if !a.HasConfig {
+		if !a.IsInstalled {
 			installed = "Not installed"
 		}
 		configured := "Yes"
@@ -504,7 +504,7 @@ func RenderVerboseTable(agents []AgentInfo) {
 
 	for _, a := range agents {
 		installed := "Installed"
-		if !a.HasConfig {
+		if !a.IsInstalled {
 			installed = "Not installed"
 		}
 		configured := "Yes"
@@ -564,7 +564,7 @@ func agentStatuses(agents []AgentInfo) []string {
 }
 
 func agentStatus(a AgentInfo) string {
-	if !a.HasConfig {
+	if !a.IsInstalled {
 		return "Not installed"
 	}
 	return "Installed"
