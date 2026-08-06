@@ -263,6 +263,25 @@ func processAgents(
 		}
 		fmt.Printf("  %-14s -> %-30s (默认: %s, 上游 %d 个模型中最佳匹配)\n",
 			name, bestModel, defaultModel, len(upstreamModels))
+		// Show tier breakdown for tier-aware agents.
+		tr := model.ResolveTierModels(name, upstreamModels, nil)
+		if tr.Opus != "" || tr.Sonnet != "" || tr.Haiku != "" {
+			for _, tier := range []string{"opus", "sonnet", "haiku"} {
+				var v string
+				switch tier {
+				case "opus":
+					v = tr.Opus
+				case "sonnet":
+					v = tr.Sonnet
+				case "haiku":
+					v = tr.Haiku
+				}
+				if v == "" {
+					continue
+				}
+				fmt.Printf("          └─ %s -> %s\n", tier, v)
+			}
+		}
 	}
 
 	fmt.Println()
@@ -333,19 +352,40 @@ func processAgents(
 			cfgPath = filepath.Join(home, "."+name, "config.toml")
 			_ = os.MkdirAll(filepath.Dir(cfgPath), 0755)
 		}
-		err := w.Configure(cfgPath, p, bestModel)
-		if err != nil {
-			if agent.IsProtocolIncompatible(err) {
-				pi := err.(*agent.ErrProtocolIncompatible)
+
+		var writeErr error
+		var writtenLabel string
+		// Dispatch to tiered writer when available.
+		tr := model.ResolveTierModels(name, upstreamModels, nil)
+		if tw, ok := w.(agent.TieredConfigWriter); ok {
+			tiers := map[string]string{
+				"default": tr.Default,
+				"opus":    tr.Opus,
+				"sonnet":  tr.Sonnet,
+				"haiku":   tr.Haiku,
+			}
+			writeErr = tw.ConfigureTiered(cfgPath, p, tiers)
+			writtenLabel = tr.Default
+			if tr.Opus != "" || tr.Sonnet != "" || tr.Haiku != "" {
+				parts := []string{fmt.Sprintf("opus=%s", tr.Opus), fmt.Sprintf("sonnet=%s", tr.Sonnet), fmt.Sprintf("haiku=%s", tr.Haiku)}
+				writtenLabel += " [" + strings.Join(parts, ", ") + "]"
+			}
+		} else {
+			writeErr = w.Configure(cfgPath, p, bestModel)
+			writtenLabel = bestModel
+		}
+		if writeErr != nil {
+			if agent.IsProtocolIncompatible(writeErr) {
+				pi := writeErr.(*agent.ErrProtocolIncompatible)
 				fmt.Printf("  [INCOMPAT] %s: %s\n", name, pi.Reason)
 				fmt.Printf("            换用支持 %s 的代理（如 CCX Desktop），或使用其他 agent（如 claude）\n", pi.Reason)
 				continue
 			}
-			fmt.Printf("  [FAIL] %s: %v\n", name, err)
-			_ = err // captured for return
+			fmt.Printf("  [FAIL] %s: %v\n", name, writeErr)
+			_ = writeErr // captured for return
 			continue
 		}
-		fmt.Printf("  [OK] %s -> %s\n", name, bestModel)
+		fmt.Printf("  [OK] %s -> %s\n", name, writtenLabel)
 		configured++
 	}
 	fmt.Println()

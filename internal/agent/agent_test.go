@@ -302,7 +302,10 @@ func TestOpenCodeWriter_Content(t *testing.T) {
 		t.Fatalf("Configure error = %v", err)
 	}
 	data, _ := os.ReadFile(cfgPath)
-	if !containsAll(string(data), "myccx/glm-5.2", "myccx/deepseek-v4-flash") {
+	// The default model (myccx/glm-5.2) is written for both the primary model
+	// and small_model; small_model now resolves via the tiered writer instead of
+	// a hardcoded fallback.
+	if !containsAll(string(data), "myccx/glm-5.2", "small_model") {
 		t.Errorf("opencode config missing expected model refs. Got:\n%s", string(data))
 	}
 }

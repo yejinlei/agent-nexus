@@ -3,6 +3,7 @@ package agent
 import (
 	"agent-nexus/internal/proxy"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,29 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) er
 	if model == "" {
 		model = modelDefault(w.Name())
 	}
+	return w.ConfigureTiered(path, p, map[string]string{"default": model})
+}
+
+// ConfigureTiered writes OpenCode's config.json with a primary model and a
+// separately-resolved small_model. tiers["default"] (or tiers["opus"]) is used
+// as the primary; tiers["haiku"] is used for small_model, falling back to
+// default when empty.
+func (w *openCodeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[string]string) error {
+	model := tiers["opus"]
+	if model == "" {
+		model = tiers["default"]
+	}
+	if model == "" {
+		model = modelDefault(w.Name())
+	}
+	if model == "" {
+		return fmt.Errorf("未找到 %s 的默认模型", w.Name())
+	}
+
+	smallModel := tiers["haiku"]
+	if smallModel == "" {
+		smallModel = model
+	}
 
 	// Read existing config to preserve any user customisations.
 	var cfg map[string]interface{}
@@ -31,7 +55,19 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) er
 	}
 
 	providerID := "myccx"
-	modelRef := providerID + "/" + model
+	// The model may come in as "myccx/glm-5.2" (with the provider prefix
+	// baked into the default) or as a bare model name. Normalise to the bare
+	// model name so modelRef doesn't double the prefix.
+	bareModel := strings.TrimPrefix(model, providerID+"/")
+	if bareModel == "" {
+		bareModel = model
+	}
+	modelRef := providerID + "/" + bareModel
+	bareSmall := strings.TrimPrefix(smallModel, providerID+"/")
+	if bareSmall == "" {
+		bareSmall = smallModel
+	}
+	smallModelRef := providerID + "/" + bareSmall
 
 	// Build provider block with apiKey in options (required for custom providers).
 	providerBlock := map[string]interface{}{
@@ -42,7 +78,7 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) er
 			"apiKey":  p.APIKey,
 		},
 		"models": map[string]interface{}{
-			model: map[string]interface{}{"name": model},
+			modelRef: map[string]interface{}{"name": modelRef},
 		},
 	}
 
@@ -52,7 +88,7 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) er
 
 	cfg["$schema"] = "https://opencode.ai/config.json"
 	cfg["model"] = modelRef
-	cfg["small_model"] = providerID + "/deepseek-v4-flash"
+	cfg["small_model"] = smallModelRef
 	cfg["provider"] = provMap
 
 	// Also store credentials in ~/.local/share/opencode/auth.json

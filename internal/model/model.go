@@ -32,7 +32,7 @@ type ModelDetail struct {
 func BuildRoutingTable(p *proxy.Proxy) []ModelMapping {
 	routing := make([]ModelMapping, 0, len(shared.DefaultModels))
 	for agent, defModel := range shared.DefaultModels {
-		routing = append(routing, ModelMapping{Agent: agent, Model: defModel, Target: defModel, Source: "CCX"})
+		routing = append(routing, ModelMapping{Agent: agent, Model: defModel.Default, Target: defModel.Default, Source: "CCX"})
 	}
 
 	if p != nil && p.ModelMap != nil {

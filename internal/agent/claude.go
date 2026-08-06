@@ -3,6 +3,7 @@ package agent
 import (
 	"agent-nexus/internal/proxy"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,20 @@ func (w *claudeWriter) CanConfigure(_ *proxy.Proxy) bool { return true }
 func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) error {
 	if model == "" {
 		model = modelDefault(w.Name())
+	}
+	return w.ConfigureTiered(path, p, map[string]string{"default": model})
+}
+
+// ConfigureTiered writes Claude's settings.json with per-tier model mappings.
+// tiers["opus"] / ["sonnet"] / ["haiku"] are the named roles; each falls back
+// to tiers["default"] when empty.
+func (w *claudeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[string]string) error {
+	defaultModel := tiers["default"]
+	if defaultModel == "" {
+		defaultModel = modelDefault(w.Name())
+		if defaultModel == "" {
+			return fmt.Errorf("未找到 %s 的默认模型", w.Name())
+		}
 	}
 
 	cfg := make(map[string]interface{})
@@ -42,12 +57,17 @@ func (w *claudeWriter) Configure(path string, p *proxy.Proxy, model string) erro
 	// name. Without them, a tier switch sends an unknown model name to the
 	// proxy and 404s.
 	for _, tier := range []string{"OPUS", "SONNET", "HAIKU"} {
-		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"]     = model
-		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL_NAME"] = model
+		key := strings.ToLower(tier)
+		tierModel := tiers[key]
+		if tierModel == "" {
+			tierModel = defaultModel
+		}
+		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"]     = tierModel
+		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL_NAME"] = tierModel
 	}
 
 	cfg["env"] = env
-	cfg["model"] = model
+	cfg["model"] = defaultModel
 	cfg["effortLevel"] = "high"
 
 	out, _ := json.MarshalIndent(cfg, "", "  ")

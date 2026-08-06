@@ -175,3 +175,57 @@ func PickCustomModel(agentName string, upstreamModels []string) string {
 func GetAllUpstreamModels(r *db.ProxyRecord) []string {
 	return db.GetModelsFromRecord(r)
 }
+
+// TierResolution holds the per-tier resolution result for one agent.
+type TierResolution struct {
+	Agent   string
+	Default string
+	Opus    string
+	Sonnet  string
+	Haiku   string
+}
+
+// ResolveTierModels determines the best model per tier role for a given agent.
+//
+// It reads the agent's tier defaults from shared.DefaultModels (via
+// shared.GetTierModels) and runs ResolveModelForAgent() once per role
+// (Default, Opus, Sonnet, Haiku). A role whose default is empty is treated as
+// not applicable and returns an empty string for that role.
+//
+// upstreamModels is the set of model IDs returned by the proxy's /v1/models
+// endpoint. Pass nil or an empty slice to skip upstream lookup.
+// proxyModelMap is the proxy's model mapping (e.g. {"fable": "sensenova-..."}).
+func ResolveTierModels(agentName string, upstreamModels []string, proxyModelMap map[string]string) TierResolution {
+	tr := TierResolution{Agent: agentName}
+
+	tms, ok := shared.GetTierModels(agentName)
+	if !ok {
+		return tr
+	}
+
+	for role, want := range map[string]*string{
+		"default": &tr.Default,
+		"opus":    &tr.Opus,
+		"sonnet":  &tr.Sonnet,
+		"haiku":   &tr.Haiku,
+	} {
+		switch role {
+		case "default":
+			*want, _ = ResolveModelForAgent(agentName, tms.Default, upstreamModels, proxyModelMap)
+		case "opus":
+			if tms.Opus != "" {
+				*want, _ = ResolveModelForAgent(agentName, tms.Opus, upstreamModels, proxyModelMap)
+			}
+		case "sonnet":
+			if tms.Sonnet != "" {
+				*want, _ = ResolveModelForAgent(agentName, tms.Sonnet, upstreamModels, proxyModelMap)
+			}
+		case "haiku":
+			if tms.Haiku != "" {
+				*want, _ = ResolveModelForAgent(agentName, tms.Haiku, upstreamModels, proxyModelMap)
+			}
+		}
+	}
+
+	return tr
+}

@@ -16,6 +16,20 @@ type ConfigWriter interface {
 	StatusModel(path string) (model, source, notes string)
 }
 
+// TieredConfigWriter extends ConfigWriter with per-tier model support.
+// A writer that implements this is called with named role→model mappings
+// (opus/sonnet/haiku) instead of a single model string. Writers whose config
+// format has no tier concept (codex, kimi, hermes, gemini) simply do not
+// implement this interface and continue using Configure().
+type TieredConfigWriter interface {
+	ConfigWriter
+	// ConfigureTiered writes the proxy config with per-tier model names.
+	// tiers["default"] is the fallback; tiers["opus"] / ["sonnet"] / ["haiku"]
+	// are the named roles. An empty role value means the caller should use
+	// tiers["default"] for that slot.
+	ConfigureTiered(path string, p *proxy.Proxy, tiers map[string]string) error
+}
+
 // WriterRegistry holds all config writers
 type WriterRegistry struct {
 	writers []ConfigWriter
