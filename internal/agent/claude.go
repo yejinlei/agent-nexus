@@ -95,6 +95,38 @@ func (w *claudeWriter) Status(path string) (bool, string) {
 	return false, "未配置代理"
 }
 
+// keysWritersOwn lists the top-level keys in settings.json that
+// agent-nexus sets. Reset removes them so Claude falls back to its defaults.
+var keysWritersOwn = []string{"env", "model", "effortLevel"}
+
+// Reset surgically removes agent-nexus injected keys from Claude's settings.json.
+func (w *claudeWriter) Reset(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	for _, k := range keysWritersOwn {
+		delete(cfg, k)
+	}
+
+	// If nothing is left, delete the file entirely.
+	if len(cfg) == 0 {
+		_ = os.Remove(path)
+		return []string{}, nil
+	}
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return nil, os.WriteFile(path, append(out, '\n'), 0644)
+}
+
 func (w *claudeWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
 	modelName, found := extractModelFromConfig(path)

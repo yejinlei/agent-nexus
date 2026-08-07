@@ -3,6 +3,7 @@ package agent
 import (
 	"agent-nexus/internal/proxy"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,6 +186,51 @@ func (w *openclaudeWriter) StatusModel(path string) (model, source, notes string
 		}
 	}
 	return "", source, notes
+}
+
+// Reset removes agent-nexus injected files and keys for OpenClaude.
+func (w *openclaudeWriter) Reset(path string) ([]string, error) {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return nil, fmt.Errorf("无法获取用户主目录")
+	}
+
+	var toDelete []string
+
+	// Delete the provider file we wrote.
+	toDelete = append(toDelete, filepath.Join(home, ".openclaude", "providers", "sensenova.json"))
+
+	// Delete the legacy env file we wrote.
+	toDelete = append(toDelete, filepath.Join(home, ".openclaude-env"))
+
+	// Surgically remove env/model keys from the main openclaude json config.
+	for _, ocJSON := range []string{
+		filepath.Join(home, ".openclaude.json"),
+		filepath.Join(home, ".openclaude", ".openclaude.json"),
+	} {
+		if _, statErr := os.Stat(ocJSON); statErr != nil {
+			continue
+		}
+		if data, readErr := os.ReadFile(ocJSON); readErr == nil {
+			var cfg map[string]interface{}
+			if jsonErr := json.Unmarshal(data, &cfg); jsonErr == nil {
+				for _, k := range []string{"env", "model"} {
+					_ = k
+					delete(cfg, k)
+				}
+				if len(cfg) == 0 {
+					toDelete = append(toDelete, ocJSON)
+				} else {
+					out, marshErr := json.MarshalIndent(cfg, "", "  ")
+					if marshErr == nil {
+						_ = os.WriteFile(ocJSON, append(out, '\n'), 0644)
+					}
+				}
+			}
+		}
+	}
+
+	return toDelete, nil
 }
 
 // modelDefault returns the canonical default model for this writer's agent

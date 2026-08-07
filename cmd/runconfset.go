@@ -25,9 +25,10 @@ import (
 // runConfSetOpts carries the unified conf set options.
 type runConfSetOpts struct {
 	agent        string // "all" or comma-separated agent names
-	db           string // "auto" or "<N>" (required)
+	db           string // "auto" or "<N>" (required unless --reset)
 	dryRun       bool
 	autoName     string // user-provided snapshot name for auto-backup
+	reset        bool   // restore agents to original (pre-configure) state
 }
 
 var (
@@ -35,6 +36,7 @@ var (
 	confSetDB       string
 	confSetDry      bool
 	confSetAutoName string
+	confSetReset    bool
 )
 
 // confSetCmd is the single unified entry point for writing upstream
@@ -70,6 +72,7 @@ var confSetCmd = &cobra.Command{
 			db:       confSetDB,
 			dryRun:   confSetDry,
 			autoName: confSetAutoName,
+			reset:    confSetReset,
 		}
 		if opts.agent == "" {
 			opts.agent = "all"
@@ -81,14 +84,18 @@ var confSetCmd = &cobra.Command{
 func initConfSetCmd() {
 	fs := confSetCmd.Flags()
 	fs.StringVarP(&confSetAgent, "agent", "a", "all", "要配置的 agent（逗号分隔），用 all 配置所有可配置 agent")
-	fs.StringVar(&confSetDB, "db", "", "AI 网关来源（必选）：auto=最小 id 记录，<N>=指定 id")
+	fs.StringVar(&confSetDB, "db", "", "AI 网关来源（--reset 时忽略）：auto=最小 id 记录，<N>=指定 id")
 	fs.BoolVarP(&confSetDry, "dry-run", "d", false, "预览模式，不实际写入")
-	fs.StringVar(&confSetAutoName, "backup-name", "", "配置前自动快照的名称（留空自动用时间戳）")
+	fs.StringVar(&confSetAutoName, "backup-name", "", "操作前自动快照的名称（留空自动用时间戳）")
+	fs.BoolVarP(&confSetReset, "reset", "r", false, "恢复 agent 到原始状态（去掉 agent-nexus 注入的配置）")
 	confSetCmd.MarkFlagRequired("db")
 }
 
 // runConfSet is the unified configuration pipeline.
 func runConfSet(opts runConfSetOpts) error {
+	if opts.reset {
+		return runConfReset(opts)
+	}
 	return runConfSetFromDB(opts)
 }
 
@@ -158,6 +165,116 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 
 	_, err = processAgents(p, rec, proxyID, upstreamModels, agentNames, opts.dryRun, opts.autoName)
 	return err
+}
+
+// runConfReset restores each agent to its original (pre-configure) state by
+// delegating to the Resetter interface on each writer.
+func runConfReset(opts runConfSetOpts) error {
+	// Resolve agent list
+	agentNames, err := resolveAgentList(opts.agent)
+	if err != nil {
+		return err
+	}
+	if len(agentNames) == 0 {
+		fmt.Println("未找到可配置的 agent")
+		return nil
+	}
+
+	fmt.Println("正在恢复 agent 到原始配置...")
+	fmt.Printf("  目标 agent: %s\n", strings.Join(agentNames, ", "))
+	fmt.Println()
+
+	// Pre-reset: snapshot all current configs as safety net
+	fmt.Println("正在备份当前配置...")
+	allAgents := discover.Discover()
+	nameToAgent := make(map[string]discover.AgentInfo)
+	for _, a := range allAgents {
+		nameToAgent[a.Name] = a
+	}
+	allConfigurable := make([]string, 0, len(nameToAgent))
+	for name, a := range nameToAgent {
+		if a.HasConfig && a.IsConfigurable && a.ConfigPath != "" {
+			allConfigurable = append(allConfigurable, name)
+		}
+	}
+	autoSnapshotName := opts.autoName
+	if autoSnapshotName == "" {
+		autoSnapshotName = fmt.Sprintf("auto-backup-reset-%s", time.Now().Format("2006-01-02_15-04-05"))
+	}
+	dbCheck, dbCheckErr := db.New()
+	if dbCheckErr == nil {
+		_ = dbCheck.Init()
+		if snap, _ := dbCheck.GetSnapshotByName(autoSnapshotName); snap != nil {
+			autoSnapshotName = fmt.Sprintf("auto-backup-reset-%s", time.Now().Format("2006-01-02_15-04-05.000"))
+		}
+		dbCheck.Close()
+	}
+	snapshotUUID, bakErr := createAutoSnapshot(allConfigurable, nameToAgent, autoSnapshotName, "conf set --reset")
+	if bakErr != nil {
+		fmt.Printf("  ⚠ 自动备份失败: %v（继续执行恢复）\n", bakErr)
+	} else {
+		fmt.Printf("  备份快照: %s (名称: %s)\n", snapshotUUID, autoSnapshotName)
+	}
+	fmt.Println()
+
+	fmt.Println(strings.Repeat("-", 60))
+
+	registry := agent.NewWriterRegistry()
+	var resetCount int
+
+	for _, name := range agentNames {
+		w := registry.Get(name)
+		if w == nil {
+			fmt.Printf("  [SKIP] %s: 不支持配置的 writer\n", name)
+			continue
+		}
+		if !agent.HasResetter(w) {
+			fmt.Printf("  [SKIP] %s: 不支持 reset（该 writer 未实现 Resetter）\n", name)
+			continue
+		}
+		a := nameToAgent[name]
+		if !a.IsConfigured {
+			fmt.Printf("  [SKIP] %s: 未配置代理，无需恢复\n", name)
+			continue
+		}
+
+		cfgPath := a.ConfigPath
+		if cfgPath == "" {
+			home := userHomeDir()
+			cfgPath = filepath.Join(home, "."+name, "config.toml")
+		}
+
+		resetter := w.(agent.Resetter)
+		auxFiles, resetErr := resetter.Reset(cfgPath)
+		if resetErr != nil {
+			fmt.Printf("  [FAIL] %s: %v\n", name, resetErr)
+			continue
+		}
+
+		// Delete auxiliary files (auth.json, etc.)
+		var deletedAux []string
+		for _, p := range auxFiles {
+			if _, stErr := os.Stat(p); stErr != nil {
+				continue // already gone, that's fine
+			}
+			if rmErr := os.Remove(p); rmErr == nil {
+				deletedAux = append(deletedAux, filepath.Base(p))
+			}
+		}
+
+		fmt.Printf("  [OK] %s", name)
+		if len(deletedAux) > 0 {
+			fmt.Printf(" (已删除: %s)", strings.Join(deletedAux, ", "))
+		}
+		fmt.Printf(" → 已恢复原始状态\n")
+		resetCount++
+	}
+
+	fmt.Println()
+	fmt.Printf("恢复完成: %d 个 agent 已恢复原始配置\n", resetCount)
+	fmt.Printf("使用 'agent-nexus discover' 查看当前状态。\n")
+	fmt.Printf("如需回退: 'agent-nexus conf restore %s'\n", snapshotUUID)
+	return nil
 }
 
 // resolveDBArg parses the --db flag into a proxy record ID.

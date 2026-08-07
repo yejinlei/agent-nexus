@@ -30,6 +30,24 @@ type TieredConfigWriter interface {
 	ConfigureTiered(path string, p *proxy.Proxy, tiers map[string]string) error
 }
 
+// Resetter can remove all agent-nexus injected configuration, restoring the
+// agent to its original (pre-configure) state. Writers that only add whole
+// files simply delete them; writers that merge into existing files perform
+// surgical removal of the keys they own and return any auxiliary files
+// (e.g. auth.json) for the caller to delete.
+type Resetter interface {
+	// Reset restores the agent to its original state.
+	// path is the primary config file path (from discovery).
+	// Returns the list of auxiliary files to delete (empty if none).
+	Reset(path string) ([]string, error)
+}
+
+// HasResetter checks whether a writer implements the Resetter interface.
+func HasResetter(w ConfigWriter) bool {
+	_, ok := w.(Resetter)
+	return ok
+}
+
 // WriterRegistry holds all config writers
 type WriterRegistry struct {
 	writers []ConfigWriter

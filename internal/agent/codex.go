@@ -260,6 +260,95 @@ func (w *codexWriter) StatusModel(path string) (model, source, notes string) {
 	return "", source, notes
 }
 
+// keysWritersOwn lists top-level keys we claim responsibility for in codex's
+// config.toml. Reset removes them and any leftover blank lines.
+var keysWritersOwnCodex = []string{
+	"openai_base_url",
+	"model_provider",
+	"model",
+	"api_key",
+}
+
+// Reset surgically removes agent-nexus injected keys and the auth.json file.
+func (w *codexWriter) Reset(path string) ([]string, error) {
+	dir := filepath.Dir(path)
+
+	var toDelete []string
+
+	// Remove [model_providers.ccswitch] section entirely.
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err == nil {
+		lines := strings.Split(string(data), "\n")
+		lines = w.removeSection(lines, "model_providers.ccswitch")
+
+		// Remove the top-level keys we own.
+		ownSet := make(map[string]bool)
+		for _, k := range keysWritersOwnCodex {
+			ownSet[k] = true
+		}
+		var out []string
+		secIdx := len(lines)
+		for i, line := range lines {
+			if isSectionHeader(line) {
+				secIdx = i
+				break
+			}
+		}
+		// Only strip owned keys from the unsectioned (top-level) block.
+		for i, line := range lines {
+			if i >= secIdx {
+				break
+			}
+			if ownSet[kvKey(line)] {
+				continue // drop the line
+			}
+			out = append(out, line)
+		}
+		// Keep everything from first section onward.
+		for i := secIdx; i < len(lines); i++ {
+			out = append(out, lines[i])
+		}
+
+		// Collapse trailing consecutive blanks.
+		for len(out) > 0 && out[len(out)-1] == "" {
+			out = out[:len(out)-1]
+		}
+
+		if len(out) == 0 {
+			_ = os.Remove(path)
+		} else {
+			_ = os.WriteFile(path, []byte(strings.Join(out, "\n")), 0644)
+		}
+	}
+
+	// Remove auth.json we created.
+	authPath := filepath.Join(dir, "auth.json")
+	if _, statErr := os.Stat(authPath); statErr == nil {
+		_ = os.Remove(authPath)
+	}
+
+	return toDelete, nil
+}
+
+// removeSection deletes the section with the given name, including the
+// trailing blank separator if present. Preserves all other sections.
+func (w *codexWriter) removeSection(lines []string, name string) []string {
+	start, end := findSection(lines, name)
+	if start < 0 {
+		return lines
+	}
+	head := lines[:start]
+	tail := lines[end:]
+	// Eat one leading blank separator line for tidiness.
+	if len(tail) > 0 && tail[0] == "" {
+		tail = tail[1:]
+	}
+	return append(head, tail...)
+}
+
 // ---- minimal TOML helpers (no external dependency) ----
 
 func contains(s, sub string) bool {

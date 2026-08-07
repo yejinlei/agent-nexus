@@ -139,5 +139,26 @@ func (w *kimiWriter) StatusModel(path string) (model, source, notes string) {
 	return "", source, notes
 }
 
+// Reset removes the kimi config files we wrote. agent-nexus writes a single
+// config.toml (possibly under two different home paths); deletion is safe.
+func (w *kimiWriter) Reset(path string) ([]string, error) {
+	home, _ := os.UserHomeDir()
+	paths := []string{path}
+	if home != "" {
+		paths = append(paths, filepath.Join(home, ".kimi-code", "config.toml"))
+		paths = append(paths, filepath.Join(home, ".kimi", "config.toml"))
+	}
+	// Deduplicate
+	seen := make(map[string]bool)
+	var out []string
+	for _, p := range paths {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 // modelDefault returns the canonical default model for this writer's agent
 // from the central shared.DefaultModels map.

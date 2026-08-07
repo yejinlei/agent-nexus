@@ -129,5 +129,70 @@ func (w *openClawWriter) StatusModel(path string) (model, source, notes string) 
 	return "", source, notes
 }
 
+// Reset surgically removes agent-nexus injected provider, model, and env keys.
+func (w *openClawWriter) Reset(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	// Remove the provider we injected.
+	if models, ok := cfg["models"].(map[string]interface{}); ok {
+		if providers, ok := models["providers"].(map[string]interface{}); ok {
+			delete(providers, "sensenova-ccx")
+			// If models.mode was our default and no other providers remain, drop it.
+			if len(providers) == 0 && models["mode"] == "merge" {
+				delete(models, "providers")
+				delete(models, "mode")
+			}
+		}
+		if len(models) == 0 {
+			delete(cfg, "models")
+		}
+	}
+
+	// Remove agents.defaults.model (the provider ref we set).
+	if agents, ok := cfg["agents"].(map[string]interface{}); ok {
+		if defaults, ok := agents["defaults"].(map[string]interface{}); ok {
+			delete(defaults, "model")
+			// Remove our catalog entry for the provider model.
+			if cat, ok := defaults["models"].(map[string]interface{}); ok {
+				for k := range cat {
+					if strings.Contains(k, "sensenova-ccx") {
+						delete(cat, k)
+					}
+				}
+				if len(cat) == 0 {
+					delete(defaults, "models")
+				}
+			}
+			if len(defaults) == 0 {
+				delete(agents, "defaults")
+			}
+		}
+		if len(agents) == 0 {
+			delete(cfg, "agents")
+		}
+	}
+
+	// Remove env block (we created it entirely).
+	delete(cfg, "env")
+
+	if len(cfg) == 0 {
+		_ = os.Remove(path)
+		return nil, nil
+	}
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return nil, os.WriteFile(path, append(out, '\n'), 0644)
+}
+
 // modelDefault returns the canonical default model for this writer's agent
 // from the central shared.DefaultModels map.

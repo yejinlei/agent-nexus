@@ -121,3 +121,18 @@ func (w *geminiWriter) StatusModel(path string) (model, source, notes string) {
 	}
 	return "", source, notes
 }
+
+// Reset removes the Gemini settings and env files we wrote.
+// NOTE: Gemini is not in the configurable set by default, but Reset is still
+// provided so conf set --reset can handle it cleanly.
+func (w *geminiWriter) Reset(path string) ([]string, error) {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return nil, nil
+	}
+	geminiDir := filepath.Join(home, ".gemini")
+	return []string{
+		filepath.Join(geminiDir, "settings.json"),
+		filepath.Join(geminiDir, ".env"),
+	}, nil
+}

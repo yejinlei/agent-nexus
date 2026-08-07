@@ -137,6 +137,19 @@ func (w *openCodeWriter) Status(path string) (bool, string) {
 	return false, "未配置代理"
 }
 
+// Reset removes the OpenCode config file and its auth file.
+func (w *openCodeWriter) Reset(path string) ([]string, error) {
+	var toDelete []string
+	toDelete = append(toDelete, path)
+
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		authFile := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+		toDelete = append(toDelete, authFile)
+	}
+	return toDelete, nil
+}
+
 func (w *openCodeWriter) StatusModel(path string) (model, source, notes string) {
 	_, source, notes = defaultModelInfo(w.Name())
 	modelName, found := extractModelFromConfig(path)

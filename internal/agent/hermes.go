@@ -177,6 +177,24 @@ func (w *hermesWriter) StatusModel(path string) (model, source, notes string) {
 	return "", source, notes
 }
 
+// Reset removes the Hermes config file we wrote. Hermes writes a single
+// config.yaml that is entirely ours, so deletion is safe.
+func (w *hermesWriter) Reset(path string) ([]string, error) {
+	// If the given path is a stale alias, resolve to the real one.
+	home, _ := os.UserHomeDir()
+	checkPath := path
+	if !fileExists(checkPath) {
+		alt1 := filepath.Join(home, "AppData", "Local", "hermes", "config.yaml")
+		alt2 := filepath.Join(home, ".hermes", "config.yaml")
+		if fileExists(alt1) {
+			checkPath = alt1
+		} else if fileExists(alt2) {
+			checkPath = alt2
+		}
+	}
+	return []string{checkPath}, nil
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
