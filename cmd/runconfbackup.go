@@ -172,7 +172,7 @@ func resolveBackupAgentList(agentsStr string, allAgents []discover.AgentInfo) []
 	}
 
 	names := make([]string, 0)
-	for _, n := range strings.Split(agentsStr, ",") {
+	for n := range strings.SplitSeq(agentsStr, ",") {
 		n = strings.TrimSpace(n)
 		if n == "" {
 			continue
