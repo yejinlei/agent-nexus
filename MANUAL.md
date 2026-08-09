@@ -390,8 +390,34 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 | `--backup-name`    | 配置前自动备份快照的名称（留空自动生成时间戳）。**同名快照会被自动跳过并改写时间戳，避免冲突** |
 | `--db`             | AI 网关来源（必选）：`auto`=DB 中 id 最小记录，`<N>`=指定 id |
 | `--dry-run` / `-d` | 预览模式，不实际写入                                      |
+| `--skip-select`    | 跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel 挑选 |
 | `--url`            | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测）                    |
 | `--key`            | 全局选项，直接指定代理 API Key                             |
+
+#### 交互选模
+
+配置自定义模型 agent（codex、claude、opencode、openclaw、openclaude）时，如果上游模型列表多于 1 个且输入是交互式终端，`conf set` 会为每个 agent 显示一份带编号的模型列表，由用户选择；若上游仅有一个模型或 stdin 为管道，则静默使用 PickCustomModel。
+
+```
+[codex] 上游模型 (共 4 个, live):
+  1. deepseek-v4-flash
+  2. gpt-5.5                    ← 推荐 (关键字匹配)
+  3. gpt-5.4
+  4. glm-5.2
+
+  选择 [1-4] (默认 2, 直接回车使用推荐); s=跳过, a=接受并应用到后续, q=退出: _
+```
+
+操作：
+
+| 输入 | 行为 |
+|------|------|
+| 直接回车 / 编号 | 使用推荐模型 / 对应编号的模型 |
+| `s`    | 跳过当前 agent（不写入其配置），继续下一个 |
+| `a`    | 接受当前选择，并将同一模型应用到后续所有自定义模型 agent |
+| `q`    | 中止整个 `conf set`，不写入任何配置 |
+
+CI 或脚本中可用 `--skip-select` 强制跳过交互选模。重定向模型 agent（kimi、hermes 等）走 `proxy_model_mappings`，不参与交互选模。
 
 #### 代理来源优先级（从高到低）
 

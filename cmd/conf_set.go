@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,12 +20,13 @@ import (
 
 // runConfSetOpts carries the unified conf set options.
 type runConfSetOpts struct {
-	agent        string // "all" or comma-separated agent names
-	db           string // "auto" or "<N>" (required unless --reset)
-	dryRun       bool
-	autoName     string // user-provided snapshot name for auto-backup
-	reset        bool   // restore agents to original (pre-configure) state
-	resetTarget  string // target for --reset: "baseline" | "latest" | <snapshot-id|name>
+	agent       string // "all" or comma-separated agent names
+	db          string // "auto" or "<N>" (required unless --reset)
+	dryRun      bool
+	autoName    string // user-provided snapshot name for auto-backup
+	reset       bool   // restore agents to original (pre-configure) state
+	resetTarget string // target for --reset: "baseline" | "latest" | <snapshot-id|name>
+	skipSelect  bool   // skip interactive model selection (CI / scripts)
 }
 
 var (
@@ -34,6 +36,7 @@ var (
 	confSetAutoName    string
 	confSetReset       bool
 	confSetResetTarget string
+	confSetSkipSelect  bool
 )
 
 // confSetCmd is the single unified entry point for writing upstream
@@ -63,6 +66,7 @@ var confSetCmd = &cobra.Command{
                       latest    恢复到该 agent 上一个 pre-write 快照
                       <id>      按 UUID/名称恢复到指定快照
                       (省略)    等同于 baseline
+  --skip-select   跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel
   --dry-run       预览模式，不实际写入
   --backup-name   操作前自动快照的名称（留空自动用时间戳）
 
@@ -80,6 +84,7 @@ var confSetCmd = &cobra.Command{
 			autoName:    confSetAutoName,
 			reset:       confSetReset,
 			resetTarget: confSetResetTarget,
+			skipSelect:  confSetSkipSelect,
 		}
 		if opts.agent == "" {
 			opts.agent = "all"
@@ -99,6 +104,14 @@ func initConfSetCmd() {
 	fs.StringVar(&confSetAutoName, "backup-name", "", "操作前自动快照的名称（留空自动用时间戳）")
 	fs.BoolVarP(&confSetReset, "reset", "r", false, "恢复 agent 配置（默认恢复到 baseline）；--reset 时无需 --db")
 	fs.StringVar(&confSetResetTarget, "reset-to", "", "恢复到指定快照：baseline / latest / <snapshot-id>")
+	fs.BoolVar(&confSetSkipSelect, "skip-select", false, "跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel")
+}
+
+// isCustomModelAgent reports whether an agent picks its model via
+// PickCustomModel (vs ResolveModelForAgent for redirect-model agents).
+func isCustomModelAgent(name string) bool {
+	_, ok := shared.DefaultModels[name]
+	return ok
 }
 
 // runConfSet is the unified configuration pipeline.
@@ -145,7 +158,10 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 		}
 	}
 
-	models := db.GetModelsFromRecord(rec)
+	models, sourceLabel, modelsErr := upstreamModelsForProxy(*rec)
+	if modelsErr != nil {
+		fmt.Printf("警告: 模型列表获取失败 (%s)，使用缓存: %v\n", sourceLabel, modelsErr)
+	}
 	p := &proxy.Proxy{
 		BaseURL: rec.URL,
 		APIKey:  rec.Key,
@@ -155,12 +171,7 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 	src := fmt.Sprintf("db:%d", rec.ID)
 	upstreamModels := models
 	fmt.Printf("AI 网关来源: %s (%s, %d 模型)\n", src, rec.URL, rec.ModelCount)
-	if len(upstreamModels) > 0 {
-		fmt.Printf("使用 DB 中存储的 %d 个上游模型\n", len(upstreamModels))
-	} else {
-		fmt.Println("DB 中无存储模型，尝试探测上游...")
-		upstreamModels = probeUpstreamModels(p.BaseURL, p.APIKey)
-	}
+	fmt.Printf("上游模型来源: %s (%d 个)\n", sourceLabel, len(upstreamModels))
 
 	agentNames, err := resolveAgentList(opts.agent)
 	if err != nil {
@@ -171,7 +182,7 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 		return nil
 	}
 
-	_, err = processAgents(p, rec, proxyID, upstreamModels, agentNames, opts.dryRun, opts.autoName)
+	_, err = processAgents(p, rec, proxyID, upstreamModels, sourceLabel, agentNames, opts.dryRun, opts.autoName, opts.skipSelect)
 	return err
 }
 
@@ -181,9 +192,11 @@ func processAgents(
 	_ *db.ProxyRecord,
 	proxyID int,
 	upstreamModels []string,
+	sourceLabel string,
 	agentNames []string,
 	dryRun bool,
 	autoName string,
+	skipSelect bool,
 ) (configured int, err error) {
 	if len(upstreamModels) == 0 {
 		return 0, fmt.Errorf("上游无可用模型，无法配置（请先运行 'agent-nexus db add' 或 'agent-nexus proxy sniff' 添加网关记录）")
@@ -269,6 +282,41 @@ func processAgents(
 	fmt.Println()
 	fmt.Println("正在配置 agent...")
 	fmt.Println(strings.Repeat("-", 60))
+
+	// Pre-compute picks for custom-model agents, prompting interactively when
+	// appropriate. Redirect-model agents (no DefaultModels entry) fall back to
+	// PickCustomModel for compatibility.
+	reader := (*bufio.Reader)(nil)
+	if !skipSelect && isTerminalStdin() && len(upstreamModels) > 1 {
+		reader = bufio.NewReader(os.Stdin)
+	}
+	pickedModels := make(map[string]string)
+	acceptAllSet := false
+	var acceptAllModel string
+	for _, name := range agentNames {
+		if !isCustomModelAgent(name) {
+			continue
+		}
+		if acceptAllSet {
+			pickedModels[name] = acceptAllModel
+			continue
+		}
+		picked, action := PromptModelSelection(name, sourceLabel, upstreamModels, reader)
+		switch action {
+		case ActionAuto:
+			pickedModels[name] = picked
+		case ActionAcceptAll:
+			pickedModels[name] = picked
+			acceptAllModel = picked
+			acceptAllSet = true
+		case ActionSkip:
+			fmt.Printf("  [SKIP] %s: 用户选择跳过\n", name)
+		case ActionQuit:
+			fmt.Println("用户退出，未写入任何配置。")
+			return configured, nil
+		}
+	}
+
 	registry := agent.NewWriterRegistry()
 
 	for _, name := range agentNames {
@@ -277,10 +325,20 @@ func processAgents(
 			fmt.Printf("  [SKIP] %s: 不支持配置的 writer\n", name)
 			continue
 		}
-		bestModel := model.PickCustomModel(name, upstreamModels)
-		if bestModel == "" {
-			fmt.Printf("  [SKIP] %s: 无法选取模型\n", name)
-			continue
+		var bestModel string
+		if isCustomModelAgent(name) {
+			if v, ok := pickedModels[name]; ok && v != "" {
+				bestModel = v
+			} else {
+				fmt.Printf("  [SKIP] %s: 无法选取模型\n", name)
+				continue
+			}
+		} else {
+			bestModel = model.PickCustomModel(name, upstreamModels)
+			if bestModel == "" {
+				fmt.Printf("  [SKIP] %s: 无法选取模型\n", name)
+				continue
+			}
 		}
 		a := nameToAgent[name]
 		cfgPath := a.ConfigPath
