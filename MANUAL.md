@@ -477,21 +477,11 @@ agent-nexus conf upstream-models
 agent-nexus conf upstream-models --url http://127.0.0.1:3688/v1 --key sk-xxx
 ```
 
-### conf auto（已弃用，兼容）
-
-`conf set` 的薄别名，仅通过自动检测（`proxy.Detect`）配置代理，不读取 `--db`。保留以兼容旧用法：
-
-```powershell
-agent-nexus conf auto --agents all
-agent-nexus conf auto --agents all --dry-run
-```
-
 ### 已弃用命令
 
 | 旧命令               | 替代命令                    |
 | ----------------- | ----------------------- |
 | `agent configure` | `conf set`              |
-| `conf auto`       | `conf set`              |
 | `conf bak`        | `conf backup`           | 已隐藏 |
 | `conf show`       | `conf backup`           | 已隐藏 |
 | `conf upstream-models` | `proxy detect`       |

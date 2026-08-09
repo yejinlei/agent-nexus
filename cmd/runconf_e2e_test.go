@@ -186,15 +186,6 @@ func TestConfList_FilterByType(t *testing.T) {
 	}
 }
 
-func TestConfAuto_ForwardsToConfSet(t *testing.T) {
-	_, cleanup := setupTestHome(t)
-	defer cleanup()
-	caAgents = "codex"
-	caModels = "codex=gpt-5.5"
-	caDryRun = true
-	_ = runConfAuto("codex", "codex=gpt-5.5", true)
-}
-
 func TestGetProxySource_ExplicitFlags(t *testing.T) {
 	p, src, err := getProxySource("http://test.com/v1", "test-key")
 	if err != nil {

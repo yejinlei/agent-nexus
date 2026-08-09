@@ -316,9 +316,12 @@ agent-nexus/
 ├── go.mod / go.sum                  # Go 模块定义
 ├── cmd/
 │   ├── root.go                      # Cobra CLI 命令定义
-│   ├── runconfauto.go               # conf auto（旧，兼容）
+│   ├── conf_set.go                  # conf set 命令定义 + DB 流程
+│   ├── conf_reset.go                # conf set --reset 恢复流程
+│   ├── conf_snapshot.go             # 共享快照函数（takeSnapshot / baselineIfNeeded）
+│   ├── conf_utils.go                # resolveDBArg / resolveAgentList / parseModelsStr 等
 │   ├── runconfbackup.go             # conf backup
-│   └── runconfset.go                # conf set（统一配置入口）
+│   └── runconfrestore.go            # conf restore
 └── internal/
     ├── agent/                       # 各 agent 配置写入器（可插拔）
     ├── backup/                      # 备份逻辑

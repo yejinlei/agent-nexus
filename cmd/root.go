@@ -975,19 +975,22 @@ var confCmd = &cobra.Command{
 	Long: `配置管理命令组，用于统一配置 agent、备份和恢复配置文件。
 
 子命令：
-  set        统一配置入口（必须带 --db）
-  backup     手动备份所有/指定 agent 的配置文件（带名称）
-  list       列出所有配置快照（显示名称）
-  restore    按名称或 ID 恢复快照
+  set         统一配置入口（设置或恢复 agent 配置）
+                --agent <name|all>  指定 agent
+                --db <auto|N>       选择 AI 网关（--reset 时无需）
+                --reset [<ref>]     恢复：baseline / latest / <id> / <name>
+                --dry-run           预览模式
+  list        列出所有配置快照
+  backup      手动备份所有/指定 agent 的配置文件
+  restore     按 ID 或名称恢复快照
+  models      查看/配置 agent 的模型映射
 `,
 }
 
 func initConfCmd() {
 	initConfSetCmd()
 	initConfBackupCmd()
-	initConfAutoCmd()
 	confCmd.AddCommand(confSetCmd)
-	confCmd.AddCommand(confAutoCmd)
 	confCmd.AddCommand(confBackupCmd)
 
 	initConfUpstreamModels()
