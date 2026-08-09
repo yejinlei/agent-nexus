@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -26,8 +23,7 @@ type runConfBackupOpts struct {
 var confBackupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "手动备份所有/指定 agent 的配置文件（只读快照）",
-	Long: `
-创建指定 agent 配置文件的只读快照。
+	Long: `创建指定 agent 配置文件的只读快照。
 
 行为：
 - 只读快照，不写入任何配置
@@ -78,8 +74,8 @@ func initConfBackupCmd() {
 	bpFlags.BoolVar(&cbForce, "force", false, "允许覆盖同名快照")
 }
 
-// runConfBackup creates a read-only snapshot of selected agent configs,
-// writing to both the DB and the filesystem under a single UUID snapshot ID.
+// runConfBackup creates a read-only snapshot of selected agent configs using
+// the shared takeSnapshot infrastructure (cmd/conf_snapshot.go).
 func runConfBackup(opts runConfBackupOpts) error {
 	fmt.Println("[1/4] 扫描已安装 agent...")
 	allAgents := discover.Discover()
@@ -88,96 +84,51 @@ func runConfBackup(opts runConfBackupOpts) error {
 	selectedNames := resolveBackupAgentList(opts.agents, allAgents)
 	fmt.Printf("  目标 agent: %s\n", strings.Join(selectedNames, ", "))
 
-	nameToAgent := map[string]discover.AgentInfo{}
-	for _, a := range allAgents {
-		nameToAgent[a.Name] = a
-	}
-
 	fmt.Println("[2/4] 读取配置...")
 
-	type backupFile struct {
-		agentName string
-		path      string
-		basename  string
-		content   []byte
-		sha256    string
-		modTime   string
-		error     string
+	message := opts.message
+	if message == "" {
+		message = fmt.Sprintf("备份快照: conf backup --agents %s", opts.agents)
 	}
 
-	var bf []backupFile
-	for _, name := range selectedNames {
-		a, ok := nameToAgent[name]
-		if !ok {
-			fmt.Printf("  ⚠ %s: 未检测到该 agent，跳过\n", name)
-			bf = append(bf, backupFile{agentName: name, error: "未检测到该 agent"})
-			continue
-		}
-		if !a.HasConfig {
-			fmt.Printf("  ⚠ %s: 未安装，跳过\n", name)
-			bf = append(bf, backupFile{agentName: name, error: "未安装"})
-			continue
-		}
-		if !a.IsConfigurable {
-			continue
-		}
-
-		cfgPath := a.ConfigPath
-		if cfgPath == "" {
-			continue
-		}
-		data, err := os.ReadFile(cfgPath)
-		if err != nil {
-			bf = append(bf, backupFile{
-				agentName: a.Name,
-				path:      cfgPath,
-				basename:  filepath.Base(cfgPath),
-				error:     err.Error(),
-			})
-			continue
-		}
-		hash := sha256.Sum256(data)
-		info, _ := os.Stat(cfgPath)
-		bf = append(bf, backupFile{
-			agentName: a.Name,
-			path:      cfgPath,
-			basename:  filepath.Base(cfgPath),
-			content:   data,
-			sha256:    fmt.Sprintf("%x", hash),
-			modTime:   info.ModTime().UTC().Format(time.RFC3339),
-		})
+	name := opts.name
+	if name == "" {
+		name = fmt.Sprintf("snapshot-%s", time.Now().Format("2006-01-02_15-04-05"))
+		fmt.Printf("  自动快照名称: %s\n", name)
 	}
 
-	snapshotType := "global"
-	if !strings.EqualFold(opts.agents, "all") {
-		snapshotType = "per-agent"
-	}
-
-	snapshotMessage := opts.message
-	if snapshotMessage == "" {
-		snapshotMessage = fmt.Sprintf("备份快照: conf backup --agents %s", opts.agents)
-	}
-
-	snapshotName := opts.name
-	if snapshotName == "" {
-		snapshotName = fmt.Sprintf("snapshot-%s", time.Now().Format("2006-01-02_15-04-05"))
-		fmt.Printf("  自动快照名称: %s\n", snapshotName)
-	}
-
-	fmt.Println("[3/4] 备份预览:")
-	fmt.Println(strings.Repeat("-", 60))
-	for _, f := range bf {
-		if f.error != "" {
-			fmt.Printf("  ⚠  %s: %s\n", f.basename, f.error)
-			continue
+	// --force: delete any existing snapshot with the same name before creating.
+	if opts.force && name != "" && !opts.dryRun {
+		dbInst, err := db.New()
+		if err == nil {
+			defer dbInst.Close()
+			if initErr := dbInst.Init(); initErr == nil {
+				existing, _ := dbInst.GetSnapshotByName(name)
+				if existing != nil {
+					fmt.Printf("  覆盖同名快照: %s -> %s\n", existing.Name, existing.ID)
+					_ = dbInst.DeleteSnapshot(existing.ID)
+				}
+			}
 		}
-		fmt.Printf("  %s  [%s, %d bytes]\n", f.basename, f.sha256[:8], len(f.content))
 	}
 
-	// Skip empty snapshots: no agent configs were collected successfully
+	result := takeSnapshot(SnapshotOpts{
+		AgentNames: selectedNames,
+		Name:       name,
+		Message:    message,
+		Phase:      phaseManual,
+		Branch:     opts.branch,
+		DryRun:     opts.dryRun,
+	})
+
+	if len(result.Files) == 0 {
+		fmt.Println("[4/4] 无 agent 配置文件可备份，跳过空快照。")
+		return nil
+	}
+
 	validCount := 0
-	for _, f := range bf {
-		if f.error == "" && len(f.content) > 0 {
+	for _, f := range result.Files {
+		if f.Error == "" && len(f.Content) > 0 {
 			validCount++
 		}
 	}
@@ -189,7 +140,6 @@ func runConfBackup(opts runConfBackupOpts) error {
 		fmt.Printf("\n[预览模式 --dry-run]")
 		fmt.Printf("\n快照将写入:\n")
 		fmt.Printf("  数据库: backup_snapshots + backup_config_entries\n")
-		fmt.Printf("  数据库: backup_snapshots + backup_config_entries\n")
 		if opts.name != "" {
 			fmt.Printf("  快照名称: %s\n", opts.name)
 		}
@@ -197,73 +147,13 @@ func runConfBackup(opts runConfBackupOpts) error {
 		return nil
 	}
 
-	fmt.Println()
-	fmt.Println("[4/4] 写入快照...")
-
-	dbInst, dbErr := db.New()
-	if dbErr != nil {
-		return fmt.Errorf("数据库不可用（%v），请检查后重试", dbErr)
+	fmt.Println("[4/4] 写入快照完成")
+	if result.ID != "" {
+		fmt.Printf("  快照名称: %s\n", result.Name)
+		fmt.Printf("  数据库快照: %s (分支: %s, 类型: manual)\n", result.ID, opts.branch)
 	}
-	defer dbInst.Close()
-	if err := dbInst.Init(); err != nil {
-		return fmt.Errorf("数据库初始化失败: %w", err)
-	}
-
-	// Check name overlap: if name is non-empty and an existing snapshot uses it.
-	if snapshotName != "" {
-		existing, _ := dbInst.GetSnapshotByName(snapshotName)
-		if existing != nil {
-			if opts.force {
-				fmt.Printf("  覆盖同名快照: %s -> %s\\n", existing.Name, existing.ID)
-				_ = dbInst.DeleteSnapshot(existing.ID)
-			} else {
-				return fmt.Errorf("已存在同名快照: %s（使用 --force 覆盖）", snapshotName)
-			}
-		}
-	}
-
-	// Global snapshots get agentName="ALL"; per-agent gets the real agent name.
-	agentNameArg := "ALL"
-	if snapshotType == "per-agent" {
-		for _, f := range bf {
-			if f.agentName != "" {
-				agentNameArg = f.agentName
-				break
-			}
-		}
-	}
-
-	var entries []db.BackupConfigEntry
-	for _, f := range bf {
-		entries = append(entries, db.BackupConfigEntry{
-			SnapshotID:   "",
-			AgentName:    f.agentName,
-			FilePath:     f.path,
-			FileBasename: f.basename,
-			SHA256:       f.sha256,
-			FileSize:     len(f.content),
-			FileContent:  string(f.content),
-			ModTime:      f.modTime,
-			Error:        f.error,
-		})
-	}
-	snapshotUUID, err := dbInst.CreateSnapshotAutoID(snapshotType, agentNameArg, opts.branch, snapshotMessage, snapshotName, nil, entries)
-	if err != nil {
-		return fmt.Errorf("写入数据库失败: %w", err)
-	}
-	fmt.Printf("  快照名称: %s\n", snapshotName)
-	fmt.Printf("  数据库快照: %s (分支: %s, 类型: %s)\n", snapshotUUID, opts.branch, snapshotType)
-
-	successCount := 0
-	failCount := 0
-	for _, f := range bf {
-		if f.error != "" {
-			failCount++
-		} else {
-			successCount++
-		}
-	}
-	fmt.Printf("\n备份完成: %d 个成功, %d 个失败\n", successCount, failCount)
+	fmt.Printf("\n备份完成: %d 个成功, %d 个失败\n",
+		validCount, len(result.Files)-validCount)
 	return nil
 }
 

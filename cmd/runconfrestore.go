@@ -241,28 +241,22 @@ func createPreRestoreSnapshot(
 	configPaths []string,
 	message, branch, name string,
 	nameToAgent map[string]discover.AgentInfo,
-	dbInst *db.DB,
+	_ *db.DB,
 ) (string, error) {
-	var entries []db.BackupConfigEntry
+	files := make([]ConfigFile, 0, len(configPaths))
 	for _, path := range configPaths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			entries = append(entries, db.BackupConfigEntry{
-				AgentName:    inferAgentName(path, nameToAgent),
-				FilePath:     path,
-				FileBasename: filepath.Base(path),
-				Error:        err.Error(),
-			})
-			continue
-		}
-		entries = append(entries, db.BackupConfigEntry{
-			AgentName:    inferAgentName(path, nameToAgent),
-			FilePath:     path,
-			FileBasename: filepath.Base(path),
-			FileContent:  string(data),
-		})
+		cf := readConfigFile(path, inferAgentName(path, nameToAgent))
+		files = append(files, cf)
 	}
-	return dbInst.CreateSnapshotAutoID("global", "ALL", branch, message, name, nil, entries)
+	result := takeSnapshot(SnapshotOpts{
+		Files:    files,
+		Message:  message,
+		Branch:   branch,
+		Name:     name,
+		Phase:    phasePreRestore,
+		DryRun:   false,
+	})
+	return result.ID, nil
 }
 
 // createPostRestoreSnapshot writes an audit snapshot of restored files to DB.
@@ -271,29 +265,22 @@ func createPostRestoreSnapshot(
 	nameToAgent map[string]discover.AgentInfo,
 	sourceID string,
 	restoreCount int,
-	dbInst *db.DB,
+	_ *db.DB,
 ) error {
-	var entries []db.BackupConfigEntry
+	files := make([]ConfigFile, 0, len(restoredFiles))
 	for _, p := range restoredFiles {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		entries = append(entries, db.BackupConfigEntry{
-			AgentName:    inferAgentName(p, nameToAgent),
-			FilePath:     p,
-			FileBasename: filepath.Base(p),
-			FileContent:  string(data),
-		})
+		cf := readConfigFile(p, inferAgentName(p, nameToAgent))
+		files = append(files, cf)
 	}
-	if len(entries) > 0 {
-		_, _ = dbInst.CreateSnapshotAutoID(
-			"global", "ALL", "main",
-			fmt.Sprintf("恢复快照: conf restore %s（%d 文件）", sourceID, restoreCount),
-			fmt.Sprintf("post-restore-%s", time.Now().Format("2006-01-02_15-04-05")),
-			nil, entries,
-		)
-	}
+	result := takeSnapshot(SnapshotOpts{
+		Files:   files,
+		Message: fmt.Sprintf("post-restore: conf restore %s（%d 文件）", sourceID, restoreCount),
+		Branch:  "main",
+		Name:    fmt.Sprintf("post-restore:%s", sourceID),
+		Phase:   phasePostRestore,
+		DryRun:  false,
+	})
+	_ = result.ID
 	return nil
 }
 
@@ -313,7 +300,7 @@ func collectRestorePaths(entries []db.BackupConfigEntry, restoreNames []string) 
 
 func parseRestoreAgentList(s string) []string {
 	var names []string
-	for _, n := range strings.Split(s, ",") {
+	for n := range strings.SplitSeq(s, ",") {
 		n = strings.TrimSpace(n)
 		if n != "" {
 			names = append(names, n)
@@ -322,7 +309,9 @@ func parseRestoreAgentList(s string) []string {
 	return names
 }
 
-// inferAgentName guesses the agent name from a config file path.
+// inferAgentName matches a config path to the best-known agent name from the
+// discovered agent map. Used by pre/post-restore snapshots so the DB entries
+// carry an agent name even when the caller only has file paths.
 func inferAgentName(path string, nameToAgent map[string]discover.AgentInfo) string {
 	for name := range nameToAgent {
 		if strings.Contains(strings.ToLower(path), strings.ToLower(name)) {
@@ -331,3 +320,4 @@ func inferAgentName(path string, nameToAgent map[string]discover.AgentInfo) stri
 	}
 	return ""
 }
+

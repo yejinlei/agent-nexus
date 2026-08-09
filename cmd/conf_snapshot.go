@@ -52,6 +52,12 @@ type SnapshotOpts struct {
 	// absolute paths (used when the file list is known independently of
 	// discovery). Empty = use discovery.
 	ConfigPathOverride []string
+
+	// Files is a set of pre-built ConfigFile entries to snapshot directly
+	// (used by restore pre/post snapshots that already know agent names).
+	// When set, it takes precedence over both ConfigPathOverride and
+	// AgentNames, and takeSnapshot skips its own file collection.
+	Files []ConfigFile
 }
 
 // SnapshotResult is returned by takeSnapshot.
@@ -110,9 +116,11 @@ func takeSnapshot(opts SnapshotOpts) SnapshotResult {
 	// --- Collect files ---
 	var files []ConfigFile
 
-	// When ConfigPathOverride is set (pre-restore / post-restore), we read
-	// exactly those paths regardless of discovery.
-	if len(opts.ConfigPathOverride) > 0 {
+	// When Files is provided directly (e.g. restore pre/post snapshots that
+	// already know agent names), use them as-is and skip file collection.
+	if len(opts.Files) > 0 {
+		files = opts.Files
+	} else if len(opts.ConfigPathOverride) > 0 {
 		for _, p := range opts.ConfigPathOverride {
 			cf := readConfigFile(p, "")
 			files = append(files, cf)
