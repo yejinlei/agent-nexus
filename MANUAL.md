@@ -37,8 +37,8 @@ agent-nexus 围绕 8 个可安装的 agent 运行时构建（`agent list` 返回
 | gemini | CLI | Google Gemini CLI，Google auth（OAuth/API key） |
 
 > **注意**：`gemini` 使用 Google 原生 Gemini 协议（`/v1beta/...`），不走外部代理，且需要 Google OAuth/API key 认证。
-> 它**不是** OpenAI 兼容的自定义模型 agent，也不会被 `agent-nexus` 配置或重定向。
-> 如果在 `conf set --agent` 中显式指定 `gemini`，它会被分到"需重定向"类别并以明确的警告跳过。
+> 它**不是** OpenAI 兼容的自定义模型 agent，也不会被 `agent-nexus` 自动配置。
+> `--agent all` 会自动排除 `gemini`（以 `IsConfigurable=false` 为权威来源）；若显式传入 `--agent gemini`，会以"未知或不可配置"警告跳过。
 
 > 以下 agent 可在本机被发现（`agent discover` 仍会识别），但不在可安装运行时列表中，因此不参与 `agent models` 等命令：
 > antigravity（Google Gemini, OAuth/API key）、copilot（GitHub 账号权益）、deveco（华为 OpenCode 引擎）、pi（Inflection Pi）、deepseek（OpenAI Compatible, 无内置安装器）、codebuddy（Claude Code 兼容, 无内置安装器）、qoder（ACP）、trae（ACP）、lmstudio（OpenAI Compatible）、clawx（IDE）、qoder-ide / trae-ide / codebuddy-ide / windsurf（IDE 自有 AI 后端）、zed（无内置 AI Agent）。

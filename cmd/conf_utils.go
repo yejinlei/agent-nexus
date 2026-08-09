@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"agent-nexus/internal/db"
+	"agent-nexus/internal/discover"
 	"agent-nexus/internal/model"
 	"agent-nexus/internal/proxy"
 	"agent-nexus/internal/shared"
@@ -42,9 +43,19 @@ func resolveDBArg(flag string) (dbRef, error) {
 }
 
 // resolveAgentList parses --agent into a sorted list of agent names.
+// The authoritative source for "is this agent auto-configurable" is
+// discover.IsConfigurableMap() — agents like gemini that declare
+// IsConfigurable=false (Google OAuth/API key, not proxy-configurable) are
+// excluded from the --agent all list and surface a warning when explicitly
+// named.
 func resolveAgentList(agentsStr string) ([]string, error) {
+	isConfigurable := discover.IsConfigurableMap()
+
 	configurable := make([]string, 0, len(shared.DefaultModels))
 	for name := range shared.DefaultModels {
+		if !isConfigurable[name] {
+			continue
+		}
 		configurable = append(configurable, name)
 	}
 	sort.Strings(configurable)
