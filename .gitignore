@@ -16,6 +16,10 @@ vendor/
 .gomodcache_build/
 .gopath/
 
+# Release artifacts
+release/
+out/
+
 # Temp description file from previous run
 description.md
 .go-cache/
