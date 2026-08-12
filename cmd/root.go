@@ -716,7 +716,7 @@ func runProxyDetectDB(dbFlag string, verbose bool) error {
 			fmt.Printf("  来源:      %s\n", src)
 			fmt.Printf("  模型列表 (%d):\n", len(models))
 			for _, m := range models {
-				fmt.Printf("    - %s\n", m)
+				fmt.Printf("    - %s\n", m.ID)
 			}
 		}
 		if i < len(records)-1 {

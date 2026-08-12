@@ -528,10 +528,7 @@ func ResponsesProbe(baseURL, apiKey string) bool {
 // /v1beta/models.
 func GeminiProtocolProbe(baseURL, apiKey string) bool {
 	// Strip /v1 suffix if present; Gemini uses /v1beta
-	u := strings.TrimSuffix(baseURL, "/")
-	if strings.HasSuffix(u, "/v1") {
-		u = u[:len(u)-3]
-	}
+	u := strings.TrimSuffix(strings.TrimSuffix(baseURL, "/"), "/v1")
 	reqBody, _ := json.Marshal(map[string]interface{}{"pageSize": 5})
 	client := &http.Client{
 		Timeout: 15 * time.Second,
@@ -549,10 +546,12 @@ func GeminiProtocolProbe(baseURL, apiKey string) bool {
 	return false
 }
 
-// UpstreamModelList fetches the list of available model IDs from the proxy's
-// /v1/models endpoint. Returns a slice of model IDs (empty slice on failure).
-// Pass the full base URL including /v1 (e.g. "http://127.0.0.1:3688/v1").
-func UpstreamModelList(baseURL, apiKey string) []string {
+// UpstreamModelItems fetches the list of available models from the proxy's
+// /v1/models endpoint, including full capability data in each item's Raw field
+// (context_length, max_output_length, input/output modalities, description,
+// supported_features, etc.). Returns nil on failure. Use UpstreamModelList
+// when only model IDs are needed (display callers).
+func UpstreamModelItems(baseURL, apiKey string) []ModelItem {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if !strings.HasSuffix(baseURL, "/v1") {
 		baseURL += "/v1"
@@ -564,9 +563,123 @@ func UpstreamModelList(baseURL, apiKey string) []string {
 		return nil
 	}
 	models, _ := parseModels(body)
-	ids := make([]string, 0, len(models))
-	for _, m := range models {
+	fillExtraFields(models, body)
+	return models
+}
+
+// UpstreamModelList fetches the list of available model IDs from the proxy's
+// /v1/models endpoint. Returns a slice of model IDs (empty slice on failure).
+// Pass the full base URL including /v1 (e.g. "http://127.0.0.1:3688/v1").
+// Use UpstreamModelItems when capability data is also needed.
+func UpstreamModelList(baseURL, apiKey string) []string {
+	items := UpstreamModelItems(baseURL, apiKey)
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for _, m := range items {
 		ids = append(ids, m.ID)
 	}
 	return ids
+}
+
+// ContextLength returns the model's context window size, or 0 if unknown.
+func (m *ModelItem) ContextLength() int {
+	return numFromRaw(m.Raw, "context_length")
+}
+
+// MaxOutputLength returns the model's max output token count, or 0 if unknown.
+func (m *ModelItem) MaxOutputLength() int {
+	return numFromRaw(m.Raw, "max_output_length")
+}
+
+// OutputModalities returns the model's declared output modalities
+// (e.g. ["text"], ["text","image"]). Empty slice means unknown.
+func (m *ModelItem) OutputModalities() []string {
+	return stringSliceFromRaw(m.Raw, "output_modalities")
+}
+
+// InputModalities returns the model's declared input modalities.
+func (m *ModelItem) InputModalities() []string {
+	return stringSliceFromRaw(m.Raw, "input_modalities")
+}
+
+// HasTextOutput reports whether the model outputs text (chat-capable).
+// Models whose only output modality is "image" (or other non-text) return
+// false, so callers can filter out image-generation-only models. When the
+// modality is unknown (empty slice), returns true for backward compat with
+// alias entries that carry no capability data.
+func (m *ModelItem) HasTextOutput() bool {
+	mods := m.OutputModalities()
+	if len(mods) == 0 {
+		return true
+	}
+	for _, mod := range mods {
+		if strings.EqualFold(mod, "text") {
+			return true
+		}
+	}
+	return false
+}
+
+// Description returns the model's human-readable description, or "" if absent.
+func (m *ModelItem) Description() string {
+	v, _ := m.Raw["description"].(string)
+	return v
+}
+
+// HasToolsSupport reports whether the model supports tool/function calling
+// according to its supported_features field. Returns true when unknown.
+func (m *ModelItem) HasToolsSupport() bool {
+	features := stringSliceFromRaw(m.Raw, "supported_features")
+	if len(features) == 0 {
+		return true // unknown = assume supported
+	}
+	for _, f := range features {
+		if strings.EqualFold(f, "tools") {
+			return true
+		}
+	}
+	return false
+}
+
+func numFromRaw(raw map[string]interface{}, key string) int {
+	if raw == nil {
+		return 0
+	}
+	v, ok := raw[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func stringSliceFromRaw(raw map[string]interface{}, key string) []string {
+	if raw == nil {
+		return nil
+	}
+	v, ok := raw[key]
+	if !ok {
+		return nil
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -15,6 +15,59 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ModelCap displays the capability fields of a sniff.ModelItem.
+type ModelCap struct {
+	ContextLen  int
+	MaxOutput   int
+	InputMods   []string
+	OutputMods  []string
+	Description string
+	HasTools    bool
+}
+
+func capFromItem(m sniff.ModelItem) ModelCap {
+	return ModelCap{
+		ContextLen:  m.ContextLength(),
+		MaxOutput:   m.MaxOutputLength(),
+		InputMods:   m.InputModalities(),
+		OutputMods:  m.OutputModalities(),
+		Description: m.Description(),
+		HasTools:    m.HasToolsSupport(),
+	}
+}
+
+func capShort(mc *ModelCap) string {
+	var parts []string
+	if mc.ContextLen > 0 {
+		parts = append(parts, fmt.Sprintf("ctx:%d", mc.ContextLen))
+	}
+	if mc.MaxOutput > 0 {
+		parts = append(parts, fmt.Sprintf("max_out:%d", mc.MaxOutput))
+	}
+	if len(mc.InputMods) > 0 {
+		parts = append(parts, "in:"+strings.Join(mc.InputMods, ","))
+	}
+	if len(mc.OutputMods) > 0 {
+		parts = append(parts, "out:"+strings.Join(mc.OutputMods, ","))
+	}
+	if mc.Description != "" {
+		parts = append(parts, "desc:"+mc.Description)
+	}
+	// Only signal tools:false when we have real capability data; a zero-value
+	// cap means "unknown", not "explicitly no tools".
+	if len(parts) > 0 && !mc.HasTools {
+		parts = append(parts, "tools:false")
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	s := strings.Join(parts, "; ")
+	if len([]rune(s)) > 50 {
+		s = string([]rune(s)[:47]) + "..."
+	}
+	return s
+}
+
 // ---- shared helpers ----
 
 // agentNameFilter builds a list of AgentInfo for the given --agents value,
@@ -111,25 +164,37 @@ func dbRecordsForID(dbFlag string) ([]db.ProxyRecord, error) {
 
 // upstreamModelsForProxy fetches live upstream models from a proxy record's
 // URL/key. Falls back to the cached models_json in the DB on failure.
-// Returns (modelList, sourceLabel, error). sourceLabel is "live" or "cached".
-func upstreamModelsForProxy(rec db.ProxyRecord) ([]string, string, error) {
-	live := sniff.UpstreamModelList(rec.URL, rec.Key)
+// Returns (modelItems, sourceLabel, error). sourceLabel is "live" or "cached".
+func upstreamModelsForProxy(rec db.ProxyRecord) ([]sniff.ModelItem, string, error) {
+	live := sniff.UpstreamModelItems(rec.URL, rec.Key)
 	if len(live) > 0 {
-		sorted := make([]string, len(live))
+		sorted := make([]sniff.ModelItem, len(live))
 		copy(sorted, live)
-		sort.Strings(sorted)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 		return sorted, "live", nil
 	}
 
+	// Fallback: parse cached models JSON. The cache stores a flat []string of
+	// model IDs (no per-model fields), so no capability data is available.
 	var cached []string
 	if rec.ModelsJSON != "" {
 		if err := json.Unmarshal([]byte(rec.ModelsJSON), &cached); err != nil {
-			return nil, "live", fmt.Errorf("代理 %s (%s) 不可达，且缓存的模型列表无效: %w", rec.URL, rec.DetectedFormat, err)
+			return nil, "", fmt.Errorf("代理 %s (%s) 不可达，且缓存的模型列表无效: %w", rec.URL, rec.DetectedFormat, err)
 		}
-		sort.Strings(cached)
-		return cached, "cached", nil
 	}
-	return nil, "live", fmt.Errorf("代理 %s (%s) 不可达且无缓存模型列表", rec.URL, rec.DetectedFormat)
+	items := make([]sniff.ModelItem, 0, len(cached))
+	seen := make(map[string]bool, len(cached))
+	for _, id := range cached {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			items = append(items, sniff.ModelItem{ID: id})
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	if len(items) > 0 {
+		return items, "cached", nil
+	}
+	return nil, "", fmt.Errorf("代理 %s (%s) 不可达且无缓存模型列表", rec.URL, rec.DetectedFormat)
 }
 
 // ---- AGENT MODELS ----
@@ -218,6 +283,7 @@ type MatchResult struct {
 	DefaultModel   string
 	Status         string // matched / unmatched / N/A
 	MatchedTo      string // the upstream model it matched, if any
+	Cap            ModelCap
 	Notes          string
 }
 
@@ -227,25 +293,34 @@ func matchAgentsToUpstream(agents []discover.AgentInfo, recs []db.ProxyRecord) (
 	var warnings []string
 
 	upstreamSet := make(map[string]struct{})
+	upstreamItems := make(map[string]sniff.ModelItem)
 	for _, rec := range recs {
-		models, src, err := upstreamModelsForProxy(rec)
+		items, src, err := upstreamModelsForProxy(rec)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("DB #%d (%s): %s", rec.ID, rec.URL, err.Error()))
 			continue
 		}
-		fmt.Printf("[conf models] DB #%d (%s): 模型 %d 个 (来源=%s)\n", rec.ID, rec.URL, len(models), src)
-		for _, m := range models {
-			upstreamSet[m] = struct{}{}
+		fmt.Printf("[conf models] DB #%d (%s): 模型 %d 个 (来源=%s)\n", rec.ID, rec.URL, len(items), src)
+		for _, m := range items {
+			lower := strings.ToLower(m.ID)
+			upstreamSet[lower] = struct{}{}
+			// Prefer live (first set) over cached data; cached entries have
+			// empty Raw and would overwrite richer data from a live hit.
+			if _, exists := upstreamItems[lower]; !exists && m.Raw != nil {
+				upstreamItems[lower] = m
+			}
 		}
 	}
 
 	fmt.Println()
 	results := make([]MatchResult, 0, len(agents))
+	var cap ModelCap
 	for _, a := range agents {
 		dm, ok := shared.GetDefaultModel(a.Name)
 		status := "unmatched"
 		matchedTo := "N/A"
 		notes := ""
+		cap = ModelCap{}
 
 		if !a.IsConfigurable {
 			status = "N/A"
@@ -254,12 +329,19 @@ func matchAgentsToUpstream(agents []discover.AgentInfo, recs []db.ProxyRecord) (
 			status = "unmatched"
 			notes = "无默认模型配置"
 		} else {
+			lowerDM := strings.ToLower(dm)
 			for up := range upstreamSet {
-				if strings.EqualFold(up, dm) {
+				if up == lowerDM {
 					status = "matched"
-					matchedTo = up
+					// 保留原始大小写用于显示（up 是小写的）
+					matchedTo = dm
 					notes = "默认模型在上游中存在"
 					break
+				}
+			}
+			if status == "matched" {
+				if item, ok := upstreamItems[lowerDM]; ok {
+					cap = capFromItem(item)
 				}
 			}
 			if status == "unmatched" {
@@ -274,6 +356,7 @@ func matchAgentsToUpstream(agents []discover.AgentInfo, recs []db.ProxyRecord) (
 			DefaultModel:   dm,
 			Status:         status,
 			MatchedTo:      matchedTo,
+			Cap:            cap,
 			Notes:          notes,
 		})
 	}
@@ -295,11 +378,11 @@ func renderConfModels(results []MatchResult, warnings []string, agentFlag, dbFla
 	}
 
 	fmt.Printf("Agent 默认模型 ↔ 上游模型 匹配 (agents=%s, db=%s):\n", agentFlag, dbFlag)
-	fmt.Println(strings.Repeat("-", 110))
+	fmt.Println(strings.Repeat("-", 140))
 
-	fmt.Printf("  %-10s  %-4s  %-16s  %-24s  %-12s  %-24s  %s\n",
-		"Agent", "类型", "协议", "默认模型", "匹配", "匹配到上游", "说明")
-	fmt.Println("  " + strings.Repeat("-", 100))
+	fmt.Printf("  %-10s  %-4s  %-16s  %-24s  %-12s  %-24s  %-28s  %s\n",
+		"Agent", "类型", "协议", "默认模型", "匹配", "匹配到上游", "能力 (ctx/max_out/in/out/tools)", "说明")
+	fmt.Println("  " + strings.Repeat("-", 130))
 
 	for _, r := range results {
 		icon := ""
@@ -313,9 +396,10 @@ func renderConfModels(results []MatchResult, warnings []string, agentFlag, dbFla
 		default:
 			icon = r.Status
 		}
-		fmt.Printf("  %-10s  %-4s  %-16s  %-24s  %-12s  %-24s  %s\n",
+		capStr := capShort(&r.Cap)
+		fmt.Printf("  %-10s  %-4s  %-16s  %-24s  %-12s  %-24s  %-28s  %s\n",
 			r.AgentName, r.Category, r.Protocol, r.DefaultModel,
-			icon, r.MatchedTo, r.Notes)
+			icon, r.MatchedTo, capStr, r.Notes)
 	}
 	fmt.Println()
 }

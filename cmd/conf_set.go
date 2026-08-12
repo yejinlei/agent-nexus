@@ -160,7 +160,8 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 
 	models, sourceLabel, modelsErr := upstreamModelsForProxy(*rec)
 	if modelsErr != nil {
-		fmt.Printf("警告: 模型列表获取失败 (%s)，使用缓存: %v\n", sourceLabel, modelsErr)
+		// 无法获取模型且没有可用缓存，无法配置。
+		return fmt.Errorf("上游模型不可用: %w", modelsErr)
 	}
 	p := &proxy.Proxy{
 		BaseURL: rec.URL,
@@ -182,7 +183,12 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 		return nil
 	}
 
-	_, err = processAgents(p, rec, proxyID, upstreamModels, sourceLabel, agentNames, opts.dryRun, opts.autoName, opts.skipSelect)
+	upstreamIDs := make([]string, len(upstreamModels))
+	for i, m := range upstreamModels {
+		upstreamIDs[i] = m.ID
+	}
+
+	_, err = processAgents(p, rec, proxyID, upstreamIDs, sourceLabel, agentNames, opts.dryRun, opts.autoName, opts.skipSelect)
 	return err
 }
 
@@ -376,7 +382,6 @@ func processAgents(
 				continue
 			}
 			fmt.Printf("  [FAIL] %s: %v\n", name, writeErr)
-			_ = writeErr
 			continue
 		}
 		fmt.Printf("  [OK] %s -> %s\n", name, writtenLabel)

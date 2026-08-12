@@ -47,7 +47,13 @@ func (w *claudeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[st
 
 	env := make(map[string]interface{})
 	if e, ok := cfg["env"]; ok {
-		env = e.(map[string]interface{})
+		if m, ok := e.(map[string]interface{}); ok {
+			env = m
+		} else {
+			// env exists but isn't an object (e.g. user typed a string).
+			// Drop it and start fresh so we don't panic on marshal.
+			_ = e
+		}
 	}
 	env["ANTHROPIC_BASE_URL"] = strings.TrimSuffix(p.BaseURL, "/v1")
 	env["ANTHROPIC_AUTH_TOKEN"] = p.APIKey
