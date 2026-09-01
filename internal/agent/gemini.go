@@ -44,16 +44,30 @@ func (w *geminiWriter) Configure(path string, p *proxy.Proxy, model string) erro
 		}
 	}
 
-	// --- settings.json ---
-	settings := map[string]interface{}{
-		"security": map[string]interface{}{
-			"auth": map[string]interface{}{
-				"selectedType": "gemini-api-key",
-			},
-		},
-	}
-	settingsJSON, _ := json.MarshalIndent(settings, "", "  ")
+	// --- settings.json (merge in place: preserve user keys like mcpServers) ---
 	settingsPath := filepath.Join(geminiDir, "settings.json")
+	var settings map[string]interface{}
+	if data, readErr := os.ReadFile(settingsPath); readErr == nil {
+		if parseErr := json.Unmarshal(data, &settings); parseErr != nil {
+			settings = make(map[string]interface{})
+		}
+	} else {
+		settings = make(map[string]interface{})
+	}
+	// Set security.auth.selectedType without dropping sibling keys.
+	sec, ok := settings["security"].(map[string]interface{})
+	if !ok {
+		sec = map[string]interface{}{}
+		settings["security"] = sec
+	}
+	auth, ok := sec["auth"].(map[string]interface{})
+	if !ok {
+		auth = map[string]interface{}{}
+		sec["auth"] = auth
+	}
+	auth["selectedType"] = "gemini-api-key"
+
+	settingsJSON, _ := json.MarshalIndent(settings, "", "  ")
 	if err := os.WriteFile(settingsPath, settingsJSON, 0644); err != nil {
 		return err
 	}

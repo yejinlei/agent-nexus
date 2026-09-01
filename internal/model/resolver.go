@@ -2,7 +2,6 @@ package model
 
 import (
 	"sort"
-	"strings"
 
 	"agent-nexus/internal/db"
 	"agent-nexus/internal/proxy"
@@ -141,33 +140,19 @@ func (r *Resolution) String() string {
 
 // PickCustomModel selects the best upstream model ID for a custom-model agent.
 // When "add all" mode is used, this function is called per-agent to pick the
-// single model that best matches the agent's default model name, falling back
-// to the first upstream model if there's no match.
+// single model that best matches the agent's default model name.
+//
+// Selection order: exact match → keyword match → scored recommendation
+// (family/tier/version, non-chat models filtered out). There is deliberately
+// no "first upstream model" fallback: when nothing plausibly matches, it
+// returns "" so callers skip the agent instead of writing a nonsense model
+// (e.g. an audio model that merely happened to be listed first).
 //
 // Used when conf set adds custom models: each agent gets the upstream model
 // that best matches its default.
 func PickCustomModel(agentName string, upstreamModels []string) string {
-	defaultModel, ok := shared.GetDefaultModel(agentName)
-	if !ok || len(upstreamModels) == 0 {
-		return ""
-	}
-
-	// Exact match is best.
-	for _, m := range upstreamModels {
-		if strings.EqualFold(m, defaultModel) {
-			return m
-		}
-	}
-
-	// Keyword match: use the agent's default model name as the keyword.
-	for _, m := range upstreamModels {
-		if strings.Contains(strings.ToLower(m), strings.ToLower(defaultModel)) {
-			return m
-		}
-	}
-
-	// Fallback: first upstream model.
-	return upstreamModels[0]
+	pick, _ := RecommendModel(agentName, upstreamModels)
+	return pick
 }
 
 // GetAllUpstreamModels returns the full deduplicated list of upstream model IDs

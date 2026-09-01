@@ -96,14 +96,19 @@ func (w *openclaudeWriter) Configure(path string, p *proxy.Proxy, model string) 
 	if data, err := os.ReadFile(ocJSON); err == nil {
 		var cfg map[string]interface{}
 		if unmarshalErr := json.Unmarshal(data, &cfg); unmarshalErr == nil {
-			cfg["env"] = map[string]interface{}{
-				"ANTHROPIC_API_KEY":      p.APIKey,
-				"ANTHROPIC_BASE_URL":     p.BaseURL,
-				"OPENAI_API_KEY":         p.APIKey,
-				"OPENAI_BASE_URL":        p.BaseURL,
-				"OPENAI_MODEL":           model,
-				"CLAUDE_CODE_USE_OPENAI": "1",
+			// Merge into the existing env map so user-set env keys survive;
+			// only the keys agent-nexus owns are overwritten.
+			env, ok := cfg["env"].(map[string]interface{})
+			if !ok {
+				env = map[string]interface{}{}
 			}
+			env["ANTHROPIC_API_KEY"] = p.APIKey
+			env["ANTHROPIC_BASE_URL"] = p.BaseURL
+			env["OPENAI_API_KEY"] = p.APIKey
+			env["OPENAI_BASE_URL"] = p.BaseURL
+			env["OPENAI_MODEL"] = model
+			env["CLAUDE_CODE_USE_OPENAI"] = "1"
+			cfg["env"] = env
 			cfg["model"] = model
 			out, _ := json.MarshalIndent(cfg, "", "  ")
 			_ = os.WriteFile(ocJSON, out, 0644)
@@ -214,10 +219,21 @@ func (w *openclaudeWriter) Reset(path string) ([]string, error) {
 		if data, readErr := os.ReadFile(ocJSON); readErr == nil {
 			var cfg map[string]interface{}
 			if jsonErr := json.Unmarshal(data, &cfg); jsonErr == nil {
-				for _, k := range []string{"env", "model"} {
-					_ = k
-					delete(cfg, k)
+				// Mirror Configure's merge: remove only the env keys we own;
+				// user-set env keys survive. Drop the block when empty.
+				if env, ok := cfg["env"].(map[string]interface{}); ok {
+					for _, k := range []string{
+						"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+						"OPENAI_API_KEY", "OPENAI_BASE_URL",
+						"OPENAI_MODEL", "CLAUDE_CODE_USE_OPENAI",
+					} {
+						delete(env, k)
+					}
+					if len(env) == 0 {
+						delete(cfg, "env")
+					}
 				}
+				delete(cfg, "model")
 				if len(cfg) == 0 {
 					toDelete = append(toDelete, ocJSON)
 				} else {

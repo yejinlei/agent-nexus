@@ -66,15 +66,25 @@ func (w *claudeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[st
 		key := strings.ToLower(tier)
 		tierModel := tiers[key]
 		if tierModel == "" {
+			// No explicit resolution for this tier: keep whatever the user's
+			// settings.json already has instead of clobbering it with the
+			// default model. Only fall back to defaultModel when the file
+			// has no value either (e.g. first-time write).
+			nameKey := "ANTHROPIC_DEFAULT_" + tier + "_MODEL_NAME"
+			if v, ok := env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"].(string); ok && v != "" {
+				if _, hasName := env[nameKey]; !hasName {
+					env[nameKey] = v // keep the pair consistent with the preserved value
+				}
+				continue
+			}
 			tierModel = defaultModel
 		}
-		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"]     = tierModel
+		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"]      = tierModel
 		env["ANTHROPIC_DEFAULT_"+tier+"_MODEL_NAME"] = tierModel
 	}
 
 	cfg["env"] = env
 	cfg["model"] = defaultModel
-	cfg["effortLevel"] = "high"
 
 	out, _ := json.MarshalIndent(cfg, "", "  ")
 
@@ -103,6 +113,10 @@ func (w *claudeWriter) Status(path string) (bool, string) {
 
 // keysWritersOwn lists the top-level keys in settings.json that
 // agent-nexus sets. Reset removes them so Claude falls back to its defaults.
+// effortLevel is listed for backward compatibility: older builds of this
+// writer wrote it, and Reset still clears it so a downgrade leaves no stale
+// value behind. ConfigureTiered no longer writes it (minimal-write principle —
+// conf set touches only ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL and model).
 var keysWritersOwn = []string{"env", "model", "effortLevel"}
 
 // Reset surgically removes agent-nexus injected keys from Claude's settings.json.

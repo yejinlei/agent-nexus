@@ -128,6 +128,55 @@ func TestResolution_NeedRedirect(t *testing.T) {
 	}
 }
 
+func TestResolveTierModels(t *testing.T) {
+	upstream := []string{"sensenova-6.7-flash-lite", "gpt-5.5", "glm-5.2", "claude-sonnet-5"}
+	pMap := map[string]string{
+		"fable":            "glm-5.2",
+		"claude-opus-4":    "glm-5.2",
+		"claude-haiku-4.5": "sensenova-6.7-flash-lite",
+	}
+
+	// With proxy map: each tier role resolves via the redirect mapping.
+	tr := ResolveTierModels("claude", upstream, pMap)
+	if tr.Agent != "claude" {
+		t.Fatalf("agent = %q, want claude", tr.Agent)
+	}
+	if tr.Default != "glm-5.2" {
+		t.Errorf("default = %q, want glm-5.2", tr.Default)
+	}
+	if tr.Opus != "glm-5.2" {
+		t.Errorf("opus = %q, want glm-5.2", tr.Opus)
+	}
+	if tr.Sonnet != "claude-sonnet-5" {
+		t.Errorf("sonnet = %q, want claude-sonnet-5 (exact upstream match)", tr.Sonnet)
+	}
+	if tr.Haiku != "sensenova-6.7-flash-lite" {
+		t.Errorf("haiku = %q, want sensenova-6.7-flash-lite", tr.Haiku)
+	}
+}
+
+func TestResolveTierModels_NoProxyMap(t *testing.T) {
+	upstream := []string{"sensenova-6.7-flash-lite", "gpt-5.5"}
+
+	tr := ResolveTierModels("claude", upstream, nil)
+	// fable / claude-opus-4 / claude-sonnet-5 / claude-haiku-4.5 are all absent
+	// upstream and there is no proxy map, so ResolveModelForAgent falls back
+	// to the role's default (default source).
+	if tr.Default != "fable" {
+		t.Errorf("default = %q, want fable", tr.Default)
+	}
+	if tr.Opus != "claude-opus-4" {
+		t.Errorf("opus = %q, want claude-opus-4", tr.Opus)
+	}
+}
+
+func TestResolveTierModels_UnknownAgent(t *testing.T) {
+	tr := ResolveTierModels("nonexistent", []string{"gpt-5.5"}, map[string]string{"a": "b"})
+	if tr.Default != "" {
+		t.Errorf("default = %q, want empty for unknown agent", tr.Default)
+	}
+}
+
 func TestModelToWrite(t *testing.T) {
 	resolutions := []Resolution{
 		{Agent: "codex", Model: "gpt-5.5", Source: "upstream"},

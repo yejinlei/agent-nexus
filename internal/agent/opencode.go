@@ -29,20 +29,15 @@ func (w *openCodeWriter) Configure(path string, p *proxy.Proxy, model string) er
 // as the primary; tiers["haiku"] is used for small_model, falling back to
 // default when empty.
 func (w *openCodeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[string]string) error {
-	model := tiers["opus"]
+	model := tiers["default"]
 	if model == "" {
-		model = tiers["default"]
+		model = tiers["opus"]
 	}
 	if model == "" {
 		model = modelDefault(w.Name())
 	}
 	if model == "" {
 		return fmt.Errorf("未找到 %s 的默认模型", w.Name())
-	}
-
-	smallModel := tiers["haiku"]
-	if smallModel == "" {
-		smallModel = model
 	}
 
 	// Read existing config to preserve any user customisations.
@@ -52,6 +47,18 @@ func (w *openCodeWriter) ConfigureTiered(path string, p *proxy.Proxy, tiers map[
 		cfg = make(map[string]interface{})
 	} else if unmarshalErr := json.Unmarshal(data, &cfg); unmarshalErr != nil {
 		cfg = make(map[string]interface{})
+	}
+
+	smallModel := tiers["haiku"]
+	if smallModel == "" {
+		// No explicit resolution: keep the user's existing small_model
+		// (minimal-write principle); only seed it from the primary on a
+		// first-time write.
+		if v, ok := cfg["small_model"].(string); ok && v != "" {
+			smallModel = v
+		} else {
+			smallModel = model
+		}
 	}
 
 	providerID := "myccx"

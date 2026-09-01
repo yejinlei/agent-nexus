@@ -79,11 +79,14 @@ func (w *openClawWriter) Configure(path string, p *proxy.Proxy, model string) er
 	}
 	modelsCatalog[agentRef] = map[string]interface{}{"alias": model}
 
-	// --- env block for any env-based tooling ---
-	cfg["env"] = map[string]interface{}{
-		"OPENAI_API_KEY":  p.APIKey,
-		"OPENAI_BASE_URL": p.BaseURL,
+	// --- env block for any env-based tooling (merge: keep user env keys) ---
+	env, ok := cfg["env"].(map[string]interface{})
+	if !ok {
+		env = map[string]interface{}{}
 	}
+	env["OPENAI_API_KEY"] = p.APIKey
+	env["OPENAI_BASE_URL"] = p.BaseURL
+	cfg["env"] = env
 
 	out, marshalErr := json.MarshalIndent(cfg, "", "  ")
 	if marshalErr != nil {
@@ -179,8 +182,16 @@ func (w *openClawWriter) Reset(path string) ([]string, error) {
 		}
 	}
 
-	// Remove env block (we created it entirely).
-	delete(cfg, "env")
+	// Remove only the env keys we injected; user-set env keys survive
+	// (Configure merges, so Reset must mirror it — minimal-modification
+	// principle). Drop the block only when it becomes empty.
+	if env, ok := cfg["env"].(map[string]interface{}); ok {
+		delete(env, "OPENAI_API_KEY")
+		delete(env, "OPENAI_BASE_URL")
+		if len(env) == 0 {
+			delete(cfg, "env")
+		}
+	}
 
 	if len(cfg) == 0 {
 		_ = os.Remove(path)

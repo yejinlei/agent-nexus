@@ -66,7 +66,7 @@ var confSetCmd = &cobra.Command{
                       latest    恢复到该 agent 上一个 pre-write 快照
                       <id>      按 UUID/名称恢复到指定快照
                       (省略)    等同于 baseline
-  --skip-select   跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel
+  --skip-select   跳过交互选模（CI / 脚本模式），自动使用推荐模型
   --dry-run       预览模式，不实际写入
   --backup-name   操作前自动快照的名称（留空自动用时间戳）
 
@@ -104,7 +104,7 @@ func initConfSetCmd() {
 	fs.StringVar(&confSetAutoName, "backup-name", "", "操作前自动快照的名称（留空自动用时间戳）")
 	fs.BoolVarP(&confSetReset, "reset", "r", false, "恢复 agent 配置（默认恢复到 baseline）；--reset 时无需 --db")
 	fs.StringVar(&confSetResetTarget, "reset-to", "", "恢复到指定快照：baseline / latest / <snapshot-id>")
-	fs.BoolVar(&confSetSkipSelect, "skip-select", false, "跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel")
+	fs.BoolVar(&confSetSkipSelect, "skip-select", false, "跳过交互选模（CI / 脚本模式），自动使用推荐模型")
 }
 
 // isCustomModelAgent reports whether an agent picks its model via
@@ -188,7 +188,26 @@ func runConfSetFromDB(opts runConfSetOpts) error {
 		upstreamIDs[i] = m.ID
 	}
 
-	_, err = processAgents(p, rec, proxyID, upstreamIDs, sourceLabel, agentNames, opts.dryRun, opts.autoName, opts.skipSelect)
+	// Build per-agent proxy model maps from the DB's proxy_model_mappings table
+	// (nativeModel → upstreamModel). This is what lets ResolveTierModels apply
+	// the proxy's model redefinition to each tier role (fable → glm-5.2, etc.).
+	perAgentModelMap := make(map[string]map[string]string, len(agentNames))
+	for _, name := range agentNames {
+		mappings, err := dbInst.GetModelMappingsByAgent(proxyID, name)
+		if err != nil {
+			continue
+		}
+		if len(mappings) == 0 {
+			continue
+		}
+		m := make(map[string]string, len(mappings))
+		for _, mp := range mappings {
+			m[mp.NativeModel] = mp.UpstreamModel
+		}
+		perAgentModelMap[name] = m
+	}
+
+	_, err = processAgents(p, rec, proxyID, upstreamIDs, sourceLabel, agentNames, perAgentModelMap, opts.dryRun, opts.autoName, opts.skipSelect)
 	return err
 }
 
@@ -200,6 +219,7 @@ func processAgents(
 	upstreamModels []string,
 	sourceLabel string,
 	agentNames []string,
+	perAgentModelMap map[string]map[string]string,
 	dryRun bool,
 	autoName string,
 	skipSelect bool,
@@ -212,15 +232,15 @@ func processAgents(
 	fmt.Println(strings.Repeat("-", 80))
 
 	for _, name := range agentNames {
-		bestModel := model.PickCustomModel(name, upstreamModels)
+		bestModel, pickSource := model.RecommendModel(name, upstreamModels)
 		defaultModel, _ := shared.GetDefaultModel(name)
 		if bestModel == "" {
 			fmt.Printf("  %-14s -> (跳过，无匹配模型)\n", name)
 			continue
 		}
-		fmt.Printf("  %-14s -> %-30s (默认: %s, 上游 %d 个模型中最佳匹配)\n",
-			name, bestModel, defaultModel, len(upstreamModels))
-		tr := model.ResolveTierModels(name, upstreamModels, nil)
+		fmt.Printf("  %-14s -> %-30s (默认: %s, 上游 %d 个模型中%s)\n",
+			name, bestModel, defaultModel, len(upstreamModels), pickSource)
+		tr := model.ResolveTierModels(name, upstreamModels, perAgentModelMap[name])
 		if tr.Opus != "" || tr.Sonnet != "" || tr.Haiku != "" {
 			for _, tier := range []string{"opus", "sonnet", "haiku"} {
 				var v string
@@ -356,16 +376,16 @@ func processAgents(
 
 		var writeErr error
 		var writtenLabel string
-		tr := model.ResolveTierModels(name, upstreamModels, nil)
+		tr := model.ResolveTierModels(name, upstreamModels, perAgentModelMap[name])
 		if tw, ok := w.(agent.TieredConfigWriter); ok {
 			tiers := map[string]string{
-				"default": tr.Default,
+				"default": bestModel,
 				"opus":    tr.Opus,
 				"sonnet":  tr.Sonnet,
 				"haiku":   tr.Haiku,
 			}
 			writeErr = tw.ConfigureTiered(cfgPath, p, tiers)
-			writtenLabel = tr.Default
+			writtenLabel = bestModel
 			if tr.Opus != "" || tr.Sonnet != "" || tr.Haiku != "" {
 				parts := []string{fmt.Sprintf("opus=%s", tr.Opus), fmt.Sprintf("sonnet=%s", tr.Sonnet), fmt.Sprintf("haiku=%s", tr.Haiku)}
 				writtenLabel += " [" + strings.Join(parts, ", ") + "]"
