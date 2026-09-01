@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="550" viewBox="0 0 1000 550">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a0a1a"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="phase1Grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6c5ce7" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="phase2Grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e17055" stop-opacity="0.40"/>
+      <stop offset="100%" stop-color="#e17055" stop-opacity="0.10"/>
+    </linearGradient>
+    <linearGradient id="phase3Grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00b894" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#00b894" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="nexusGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fdcb6e" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#fdcb6e" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.25"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <marker id="arrowY" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#fdcb6e"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="550" fill="url(#bgGrad)"/>
+  <g opacity="0.03">
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#ffffff" stroke-width="0.5"/>
+    </pattern>
+    <rect width="1000" height="550" fill="url(#grid)"/>
+  </g>
+
+  <text x="500" y="36" text-anchor="middle" fill="#ffffff" font-family="system-ui,sans-serif" font-size="24" font-weight="700">agent-nexus 工作流</text>
+
+  <g transform="translate(30,70)">
+    <rect width="280" height="450" rx="18" fill="url(#phase1Grad)" stroke="#6c5ce7" stroke-width="1.5" stroke-opacity="0.5" filter="url(#shadow)"/>
+    <text x="140" y="30" text-anchor="middle" fill="#a29bfe" font-family="system-ui,sans-serif" font-size="15" font-weight="700">① 安装运行时</text>
+
+    <g transform="translate(20,50)">
+      <rect width="240" height="55" rx="8" fill="#6c5ce7" fill-opacity="0.20" stroke="#a29bfe" stroke-width="1.2"/>
+      <text x="120" y="24" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">$ agent-nexus agent list</text>
+      <text x="120" y="42" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="10">查看 8 个 agent 运行时</text>
+    </g>
+
+    <g transform="translate(20,120)">
+      <rect width="240" height="65" rx="8" fill="#6c5ce7" fill-opacity="0.25" stroke="#a29bfe" stroke-width="1.5"/>
+      <text x="120" y="26" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">$ agent-nexus agent install codex</text>
+      <text x="120" y="44" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="10">$ agent-nexus agent install --all</text>
+    </g>
+
+    <g transform="translate(20,210)">
+      <rect width="240" height="210" rx="8" fill="#6c5ce7" fill-opacity="0.06" stroke="#6c5ce7" stroke-width="1" stroke-opacity="0.3"/>
+      <text x="120" y="24" text-anchor="middle" fill="#dfe6e9" font-family="system-ui,sans-serif" font-size="11" font-weight="600">已安装 · 8 agents</text>
+      <g transform="translate(20,42)" fill="#6c5ce7" fill-opacity="0.3" stroke="#a29bfe" stroke-width="0.8">
+        <rect width="52" height="40" rx="6"/>
+        <text x="26" y="16" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">codex</text>
+        <text x="26" y="30" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">npm</text>
+        <rect x="58" width="52" height="40" rx="6"/>
+        <text x="84" y="16" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">claude</text>
+        <text x="84" y="30" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">npm</text>
+        <rect x="116" width="52" height="40" rx="6"/>
+        <text x="142" y="16" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">kimi</text>
+        <text x="142" y="30" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">web</text>
+        <rect x="174" width="52" height="40" rx="6"/>
+        <text x="200" y="16" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="8" font-weight="600">openclaude</text>
+        <text x="200" y="30" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">npm</text>
+
+        <rect y="50" width="52" height="40" rx="6"/>
+        <text x="26" y="66" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="8" font-weight="600">opencode</text>
+        <text x="26" y="80" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">npm</text>
+        <rect x="58" y="50" width="52" height="40" rx="6"/>
+        <text x="84" y="66" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="8" font-weight="600">openclaw</text>
+        <text x="84" y="80" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">web</text>
+        <rect x="116" y="50" width="52" height="40" rx="6"/>
+        <text x="142" y="66" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">hermes</text>
+        <text x="142" y="80" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">web</text>
+        <rect x="174" y="50" width="52" height="40" rx="6"/>
+        <text x="200" y="66" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="9" font-weight="600">gemini</text>
+        <text x="200" y="80" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="8">npm</text>
+      </g>
+    </g>
+  </g>
+
+  <path d="M 320 295 L 350 295" stroke="#fdcb6e" stroke-width="2.5" fill="none" marker-end="url(#arrowY)" opacity="0.8"/>
+  <text x="335" y="285" text-anchor="middle" fill="#fdcb6e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">安装完成</text>
+
+  <g transform="translate(370,70)">
+    <rect width="280" height="450" rx="18" fill="url(#phase2Grad)" stroke="#e17055" stroke-width="1.5" stroke-opacity="0.5" filter="url(#shadow)"/>
+    <text x="140" y="30" text-anchor="middle" fill="#fab1a0" font-family="system-ui,sans-serif" font-size="15" font-weight="700">② 自动配置</text>
+
+    <g transform="translate(20,50)">
+      <rect width="240" height="55" rx="8" fill="#e17055" fill-opacity="0.20" stroke="#fab1a0" stroke-width="1.2"/>
+      <text x="120" y="24" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="12" font-weight="600">$ agent-nexus agent discover</text>
+      <text x="120" y="42" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">扫描已安装的 agent</text>
+    </g>
+
+    <g transform="translate(20,120)">
+      <rect width="240" height="55" rx="8" fill="#e17055" fill-opacity="0.20" stroke="#fab1a0" stroke-width="1.2"/>
+      <text x="120" y="24" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="12" font-weight="600">$ agent-nexus proxy detect</text>
+      <text x="120" y="42" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">自动检测代理配置</text>
+    </g>
+
+    <g transform="translate(20,190)">
+      <rect width="240" height="70" rx="8" fill="url(#nexusGrad)" stroke="#fdcb6e" stroke-width="2" filter="url(#glow)"/>
+      <text x="120" y="24" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="12" font-weight="700">$ conf set --agent all --db auto</text>
+      <text x="120" y="42" text-anchor="middle" fill="#2d3436" font-family="monospace" font-size="9">DB网关 → 备份 → 添加/映射模型 → 写入</text>
+      <text x="120" y="58" text-anchor="middle" fill="#fdcb6e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">★ 唯一配置入口 ★</text>
+    </g>
+
+    <g transform="translate(20,280)">
+      <rect width="240" height="70" rx="8" fill="#e17055" fill-opacity="0.20" stroke="#fab1a0" stroke-width="1.2"/>
+      <text x="120" y="28" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="12" font-weight="600">$ agent-nexus agent discover</text>
+      <text x="120" y="46" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">验证配置状态</text>
+    </g>
+
+    <g transform="translate(20,370)">
+      <rect width="240" height="55" rx="8" fill="#e17055" fill-opacity="0.10" stroke="#e17055" stroke-width="1" stroke-opacity="0.4"/>
+      <text x="120" y="24" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="11">$ conf history / rollback</text>
+      <text x="120" y="42" text-anchor="middle" fill="#636e72" font-family="monospace" font-size="10">配置快照与回滚</text>
+    </g>
+  </g>
+
+  <path d="M 660 295 L 690 295" stroke="#fdcb6e" stroke-width="2.5" fill="none" marker-end="url(#arrowY)" opacity="0.8"/>
+  <text x="675" y="285" text-anchor="middle" fill="#fdcb6e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">配置就绪</text>
+
+  <g transform="translate(720,70)">
+    <rect width="250" height="450" rx="18" fill="url(#phase3Grad)" stroke="#00b894" stroke-width="1.5" stroke-opacity="0.5" filter="url(#shadow)"/>
+    <text x="125" y="30" text-anchor="middle" fill="#55efc4" font-family="system-ui,sans-serif" font-size="15" font-weight="700">③ 协作平台</text>
+
+    <g transform="translate(20,55)">
+      <rect width="210" height="90" rx="10" fill="#00b894" fill-opacity="0.18" stroke="#55efc4" stroke-width="1.2"/>
+      <text x="105" y="36" text-anchor="middle" fill="#ffffff" font-family="system-ui,sans-serif" font-size="17" font-weight="700">Multica</text>
+      <text x="105" y="58" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">团队协作工作区</text>
+      <text x="105" y="76" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="10">→ 复用已配置 agent</text>
+    </g>
+
+    <g transform="translate(20,160)">
+      <rect width="210" height="90" rx="10" fill="#00b894" fill-opacity="0.18" stroke="#55efc4" stroke-width="1.2"/>
+      <text x="105" y="36" text-anchor="middle" fill="#ffffff" font-family="system-ui,sans-serif" font-size="17" font-weight="700">Orca</text>
+      <text x="105" y="58" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">智能客服 / 工作流</text>
+      <text x="105" y="76" text-anchor="middle" fill="#b2bec3" font-family="monospace" font-size="10">→ 复用已配置 agent</text>
+    </g>
+
+    <g transform="translate(20,275)">
+      <rect width="210" height="140" rx="8" fill="#00b894" fill-opacity="0.08" stroke="#00b894" stroke-width="1" stroke-opacity="0.3"/>
+      <text x="105" y="24" text-anchor="middle" fill="#55efc4" font-family="system-ui,sans-serif" font-size="11" font-weight="700">核心收益</text>
+      <text x="105" y="48" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">一次配置，全平台共享</text>
+      <text x="105" y="66" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">代理/Key 统一管理</text>
+      <text x="105" y="84" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">配置快照，随时回滚</text>
+      <text x="105" y="102" text-anchor="middle" fill="#dfe6e9" font-family="monospace" font-size="10">换代理？改一个 upstream</text>
+    </g>
+  </g>
+
+</svg>
