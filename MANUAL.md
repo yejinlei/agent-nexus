@@ -389,22 +389,27 @@ agent-nexus conf set --agent all --url http://127.0.0.1:8080/v1 --key sk-xxx
 | `--db` | AI 网关来源（必选）：`auto`=DB 中 id 最小记录，`<N>`=指定 id |
 | `--backup-name` | 配置前自动备份快照的名称（留空自动生成时间戳）。**同名快照会被自动跳过并改写时间戳，避免冲突** |
 | `--dry-run` / `-d` | 预览模式，不实际写入                                      |
-| `--skip-select`    | 跳过交互选模（CI / 脚本模式），自动使用 PickCustomModel 挑选 |
+| `--skip-select`    | 跳过交互选模（CI / 脚本模式），自动使用推荐模型（`RecommendModel`） |
 | `--url`            | 全局选项，直接指定代理 URL（覆盖 DB 和自动检测）                    |
 | `--key`            | 全局选项，直接指定代理 API Key                             |
 
 #### 交互选模
 
-配置自定义模型 agent（codex、claude、opencode、openclaw、openclaude）时，如果上游模型列表多于 1 个且输入是交互式终端，`conf set` 会为每个 agent 显示一份带编号的模型列表，由用户选择；若上游仅有一个模型或 stdin 为管道，则静默使用 PickCustomModel。
+配置自定义模型 agent（codex、claude、opencode、openclaw、openclaude）时，`conf set` 会先按推荐算法算出推荐模型，**在任何写入之前**以预览表展示每个 agent 的推荐结果及来源标签；随后在交互式终端为每个 agent 显示带编号的模型列表（推荐项排第一并标注来源），由用户最终决定；若上游仅有一个模型、stdin 为管道或传入 `--skip-select`，则自动应用推荐模型。推荐为空（无可信匹配）的 agent 会被跳过而不是误配。
 
 ```
+模型分辨率览:
+--------------------------------------------------------------------------------
+  codex          -> gpt-5.5                      (默认: gpt-5.5, 上游 242 个模型中关键字匹配)
+  claude         -> (跳过，无匹配模型)
+
 [codex] 上游模型 (共 4 个, live):
-  1. deepseek-v4-flash
-  2. gpt-5.5                    ← 推荐 (关键字匹配)
+  1. gpt-5.5                    ← 推荐 (关键字匹配)
+  2. deepseek-v4-flash
   3. gpt-5.4
   4. glm-5.2
 
-  选择 [1-4] (默认 2, 直接回车使用推荐); s=跳过, a=接受并应用到后续, q=退出: _
+  选择 [1-4] (默认 1, 直接回车使用推荐); s=跳过, a=接受并应用到后续, q=退出: _
 ```
 
 操作：
@@ -431,8 +436,8 @@ CI 或脚本中可用 `--skip-select` 强制跳过交互选模。重定向模型
 **自定义模型 agent**（codex/claude/deepseek/opencode/openclaw/openclaude/codebuddy）：
 
 - 策略：**自动添加**
-- 从 DB 网关记录的 upstream 模型列表中，通过 `PickCustomModel` 算法选取最佳匹配模型
-- 选模算法：精确匹配 → 关键字匹配 → 兜底首个
+- 从 DB 网关记录的 upstream 模型列表中，通过 `RecommendModel` 打分算法选取最佳匹配模型
+- 选模算法：非对话模型硬过滤 → 精确匹配 → 关键字匹配 → 同族打分排序 → 同类兜底；无可信匹配则跳过该 agent（绝不回退到列表首个模型）
 - 将选取的模型名直接写入 agent 配置文件
 
 **重定向模型 agent**（kimi/hermes/qoder/trae）：
@@ -528,7 +533,7 @@ agent-nexus conf upstream-models --url http://127.0.0.1:3688/v1 --key sk-xxx
 flowchart LR
     A["conf set --agent all --db auto"] --> B["选取 DB 网关记录<br/>获取 upstream 模型列表"]
     B --> C{"agent 类型?"}
-    C -->|"自定义模型<br/>codex/claude/..."| D["自动添加<br/>PickCustomModel 选最优模型"]
+    C -->|"自定义模型<br/>codex/claude/..."| D["自动添加<br/>RecommendModel 打分选最优模型"]
     C -->|"重定向模型<br/>kimi/hermes/..."| E["映射<br/>ComputeRedirectMappings"]
     D --> F["写入 agent 配置文件"]
     E --> G["写入 proxy_model_mappings 表"]
@@ -540,11 +545,21 @@ flowchart LR
 
 适用于 codex、claude、deepseek、opencode、openclaw、openclaude、codebuddy 等 OpenAI Compatible agent。
 
-**选模算法**（`PickCustomModel`）：
+**推荐算法**（`RecommendModel`，位于 `internal/model/recommend.go`）：
 
-1. **精确匹配** — upstream 模型名与 agent 默认模型名完全一致
-2. **关键字匹配** — upstream 模型名包含 agent 关键字（如 `codex`、`claude`）
-3. **兜底** — 取 upstream 列表首个模型
+0. **非对话模型硬过滤** — 音频 / 图像 / embedding / rerank / ASR / TTS 等模型
+   （如 `ACE-Step`、`whisper`、`bge-m3`）在任何打分之前被剔除，永远不会成为推荐结果
+1. **精确匹配**（`精确匹配`）— upstream 模型名与 agent 默认模型名完全一致
+2. **关键字匹配**（`关键字匹配`）— upstream 模型名包含 agent 关键字（如 `codex`、`claude`）
+3. **同族打分排序**（`同族匹配`）— 解析模型名的家族（claude/gpt/glm/deepseek/…）、
+   档位（opus > sonnet > haiku）与版本号，对候选打分排序；家族、档位、版本越接近
+   默认模型得分越高，得分 ≥ 40 才算同族可信匹配。借牌命名的衍生模型（如
+   `Qwen3.5-…-Claude-…-Distilled`、`DeepSeek-V3.2-Exp-GPT-OS`）不会被判为同族
+4. **同类兜底**（`同类兜底`）— 当上游列表被单一家族主导（占比 > 50%）且前几步无匹配时，
+   从该家族中选最优
+5. **无可信匹配 → 返回空** — 调用方跳过该 agent 并提示"跳过，无匹配模型"，
+   绝不回退到列表首个模型（旧实现的事故根源：moark 网关 241 个模型把 ACE-Step
+   音频模型发给了所有 agent）
 
 ### 重定向模型 agent（映射）
 
@@ -619,7 +634,7 @@ sequenceDiagram
     Tool->>DB: 创建全量快照（存 DB）
     DB-->>Tool: 快照 UUID + 名称
     Tool->>Tool: 分类 agent（自定义模型 / 重定向模型）
-    Tool->>Tool: 自定义模型 → PickCustomModel 选最优模型
+    Tool->>Tool: 自定义模型 → RecommendModel 打分选最优模型（写入前预览）
     Tool->>Tool: 重定向模型 → ComputeRedirectMappings 构建映射
     Tool->>DB: 写入 proxy_model_mappings 表
     Tool->>FS: 写入各 agent 配置文件
